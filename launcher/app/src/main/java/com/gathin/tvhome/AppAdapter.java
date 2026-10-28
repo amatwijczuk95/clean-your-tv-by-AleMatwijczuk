@@ -198,6 +198,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final Set<String> hidden;
     /** Apps pre-seeded into the App library's "added" set (config.xml library_apps); empty by default. */
     private final Set<String> libraryPreload;
+    private final boolean dockOnly;
     private final boolean animations;
     private final boolean advancedEffects;
     private final boolean showLibrary;
@@ -228,6 +229,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.fillDock = cfg.fillDock;
         this.hidden = new HashSet<>(cfg.hiddenApps);
         this.libraryPreload = new HashSet<>(cfg.libraryApps);
+        this.dockOnly = cfg.dockOnly;
         this.animations = cfg.animations;
         this.advancedEffects = cfg.animations && cfg.advancedEffects;
         this.showHomeSettings = cfg.showHomeSettingsShortcut;
@@ -338,6 +340,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             fresh.add(docked + i, new Entry(Entry.EMPTY, "", new ComponentName(ctx, "empty-dock-slot-" + i),
                     null, null, null, 0));
         }
+        // Local: with dock_only, Home is the dock alone; every other app lives in the App library.
+        while (dockOnly && !reordering && fresh.size() > dockSize) fresh.remove(fresh.size() - 1);
         items.clear();
         items.addAll(fresh);
         notifyDataSetChanged();

@@ -80,6 +80,8 @@ final class Config {
     boolean weatherIcon = true;
     /** Local addition: the Down panel under the dock (theme "down_drawer"). */
     boolean downDrawer;
+    /** Local addition: Home shows the dock only (theme "dock_only"). */
+    boolean dockOnly;
     final String liveTvPackage;
     final String liveTvAction;
     final String liveTvInputId;
@@ -699,6 +701,7 @@ final class Config {
             }
             config.weatherIcon = bool(json, "weather_icon", true);
             config.downDrawer = bool(json, "down_drawer", false);
+            config.dockOnly = bool(json, "dock_only", false);
         }
         if (json != null) config.videoRotationMinutes = integer(json, "video_rotation_minutes", 5, 1, 240);
         return config;

@@ -28,7 +28,8 @@
     "me.efesser.flauncher",
     "mediatek.factorymenu.ui",
     "mtktvapi.agent",
-    "io.github.maxhayim.brightness"
+    "io.github.maxhayim.brightness",
+    "com.deepakpk.usbgallery"
   ],
   "fill_dock": false,
   "columns": 6,
@@ -86,5 +87,7 @@
   "app_labels": [
     "org.smarttube.stable=YouTube"
   ],
-  "down_drawer": true
+  "down_drawer": true,
+  "library_ok_opens": true,
+  "dock_only": true
 }
