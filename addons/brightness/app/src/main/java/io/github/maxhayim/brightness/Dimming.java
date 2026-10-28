@@ -22,14 +22,14 @@ final class Dimming {
 
     static final class Settings {
         /** The master switch. Off draws nothing, whatever the rest says. */
-        boolean on;
-        int brightness = 70;
+        boolean on = true;
+        int brightness = 100;
         Night night = Night.SCHEDULED;
-        int nightBrightness = 40;
-        int warmth = 50;
+        int nightBrightness = 60;
+        int warmth = 30;
         /** Minutes after midnight, local time. */
-        int nightStart = 21 * 60;
-        int nightEnd = 7 * 60;
+        int nightStart = 23 * 60;
+        int nightEnd = 6 * 60;
         /** The TV's own picture at night too (Realtek TVs): the values below, and the day's back in the morning. */
         boolean tvPicture;
         Picture tvNight = Picture.NIGHT;
@@ -153,10 +153,26 @@ final class Dimming {
         }
     }
 
+    /** Local change: a scheduled night eases in over this many minutes instead of dropping at once. */
+    static final int RAMP_MINUTES = 45;
+
+    /** Minutes since a scheduled night began, or -1 outside one. */
+    static int minutesIntoNight(Settings s, int minute) {
+        if (s.night != Night.SCHEDULED || !inWindow(s.nightStart, s.nightEnd, minute)) return -1;
+        return wrap(minute - s.nightStart);
+    }
+
     static Level level(Settings s, int minute) {
         if (!s.on) return new Level(MAX_BRIGHTNESS, 0, false);
         boolean night = nightNow(s, minute);
-        return night ? new Level(s.nightBrightness, s.warmth, true) : new Level(s.brightness, 0, false);
+        if (!night) return new Level(s.brightness, 0, false);
+        int into = minutesIntoNight(s, minute);
+        if (into >= 0 && into < RAMP_MINUTES) {
+            float f = (into + 1) / (float) RAMP_MINUTES;
+            return new Level(Math.round(s.brightness + (s.nightBrightness - s.brightness) * f),
+                    Math.round(s.warmth * f), true);
+        }
+        return new Level(s.nightBrightness, s.warmth, true);
     }
 
     /**
@@ -190,6 +206,8 @@ final class Dimming {
      */
     static int minutesToNextChange(Settings s, int minute) {
         if (!s.on || s.night != Night.SCHEDULED || s.nightStart == s.nightEnd) return -1;
+        int into = minutesIntoNight(s, minute);
+        if (into >= 0 && into < RAMP_MINUTES) return 1;
         int toStart = wrap(s.nightStart - minute);
         int toEnd = wrap(s.nightEnd - minute);
         if (toStart == 0) toStart = DAY_MINUTES;

@@ -19,8 +19,10 @@
     <string-array name="dock_apps">
         <item>com.netflix.ninja</item>
         <item>com.amazon.amazonvideo.livingroom</item>
-        <item>com.google.android.youtube.tv</item>
-        <item>in.startv.hotstar</item>
+        <item>com.spotify.tv.android</item>
+        <item>com.directv.dtvlatam</item>
+        <item>org.smarttube.stable</item>
+        <item>com.streamflixreborn.streamflix</item>
     </string-array>
     <!-- With fewer dock_apps than columns (or a dock app that is not installed), the free dock slots take
          the first grid apps, so the dock never shows a gap. false leaves them empty (#162); a theme can
@@ -360,7 +362,7 @@
 
     <!-- Tiles per row in the grid; the dock always has this many slots. Tiles are 180dp wide at 4 columns and
          shrink to fit from 5 up (about 144dp at 5, 117dp at 6 on a 1080p TV). -->
-    <integer name="columns">4</integer>
+    <integer name="columns">6</integer>
 
     <!-- Basic motion is on; advanced effects are opt-in in the launcher's own Settings screen. -->
     <bool name="animations">true</bool>
@@ -389,6 +391,10 @@
          (many China-market TVs, e.g. Coocaa 8R145), a fresh Home with app_library on would otherwise be
          nearly empty. Empty (off) by default, so existing setups change nothing. -->
     <string-array name="library_apps" translatable="false">
+    </string-array>
+
+    <!-- Apps the App library never lists, e.g. system apps nobody opens (a theme can set "library_hidden_apps"). Empty by default. -->
+    <string-array name="library_hidden_apps" translatable="false">
     </string-array>
 
     <!-- Module cards: an app that declares a card (docs/specs/card.md) can stand in for its tile with its own

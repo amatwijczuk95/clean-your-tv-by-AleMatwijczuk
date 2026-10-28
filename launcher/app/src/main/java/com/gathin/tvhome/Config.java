@@ -62,6 +62,24 @@ final class Config {
     final List<String> hiddenApps;
     /** Packages pre-seeded into the App library's "added" set (config.xml, library_apps); empty by default. */
     final List<String> libraryApps;
+    /** Packages the App library never lists (config.xml or a theme, library_hidden_apps); empty by default. */
+    List<String> libraryHiddenApps = Collections.emptyList();
+    /** Local experiment: a looping muted video behind Home (theme only, "video_wallpaper"); off by default. */
+    boolean videoWallpaper;
+    /** Minutes each background video loops before the next one (theme, "video_rotation_minutes"). */
+    int videoRotationMinutes = 5;
+    /** The theme offers background videos (the Launcher settings row shows only then). */
+    boolean videoAvailable;
+    /** Percent of black over the videos (theme, "video_dim"). */
+    int videoDim = 25;
+    /** Darkness over the videos in the evening (21-22 h) and at night (23-6 h), theme "video_dim_evening"/"video_dim_night". */
+    int videoDimEvening = 45, videoDimNight = 60;
+    static final String VIDEO_CHOICE_KEY = "video_on";
+    /** Local addition: where the temperature under the date comes from (theme weather_lat / weather_lon); NaN = off. */
+    double weatherLat = Double.NaN, weatherLon = Double.NaN;
+    boolean weatherIcon = true;
+    /** Local addition: the Down panel under the dock (theme "down_drawer"). */
+    boolean downDrawer;
     final String liveTvPackage;
     final String liveTvAction;
     final String liveTvInputId;
@@ -406,6 +424,7 @@ final class Config {
         boolean fillDock = res.getBoolean(R.bool.fill_dock);
         List<String> hidden = new ArrayList<>(Arrays.asList(res.getStringArray(R.array.hidden_apps)));
         List<String> libraryApps = new ArrayList<>(Arrays.asList(res.getStringArray(R.array.library_apps)));
+        List<String> libraryHidden = new ArrayList<>(Arrays.asList(res.getStringArray(R.array.library_hidden_apps)));
         String liveTv = res.getString(R.string.live_tv_package).trim();
         String liveTvAction = res.getString(R.string.live_tv_action).trim();
         String liveTvInputId = res.getString(R.string.live_tv_input_id).trim();
@@ -511,6 +530,7 @@ final class Config {
             fillDock = bool(json, "fill_dock", fillDock);
             hidden = stringList(json, "hidden_apps", hidden);
             libraryApps = stringList(json, "library_apps", libraryApps);
+            libraryHidden = stringList(json, "library_hidden_apps", libraryHidden);
             liveTv = string(json, "live_tv_package", liveTv);
             liveTvAction = string(json, "live_tv_action", liveTvAction);
             liveTvInputId = string(json, "live_tv_input_id", liveTvInputId);
@@ -652,7 +672,7 @@ final class Config {
         Festival festival = json == null ? Festival.NONE : Festival.parse(string(json, "festival", ""),
                 string(json, "festival_until", ""), string(json, "greeting", ""), string(json, "accent_color", ""));
 
-        return new Config(dock, fillDock, hidden, libraryApps, liveTv, liveTvAction, liveTvInputId, packageMap(launchActions), packageMap(appLabels),
+        Config config = new Config(dock, fillDock, hidden, libraryApps, liveTv, liveTvAction, liveTvInputId, packageMap(launchActions), packageMap(appLabels),
                 packageMap(appBanners), panelService, panelAction, panelExtra, coocaaSources, inputAction, inputSources, inputUriScheme, Math.max(1, columns),
                 Math.max(0, rowsBelow), animations, advancedEffects, shamsi, greetingName, moduleCards, reducedMotion, bootToLiveTv,
                 openOnStartChoice, dockTitle, dockRow, topMenu, launcherSettingsButton, reorderButton, showNetworkPill, showInputsPill,
@@ -666,6 +686,22 @@ final class Config {
                 consumeVolumeKeys, powerOnHome, homeLongPressHome, wifiStatusWarnings, topBarApps, showGreeting, headerWhite, clockWallpaper,
                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
                 dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly);
+        config.libraryHiddenApps = Collections.unmodifiableList(libraryHidden);
+        config.videoAvailable = json != null && bool(json, "video_wallpaper", false);
+        config.videoWallpaper = config.videoAvailable && choices.getBoolean(VIDEO_CHOICE_KEY, true);
+        if (json != null) {
+            config.videoDim = integer(json, "video_dim", 25, 0, 90);
+            config.videoDimEvening = integer(json, "video_dim_evening", 45, 0, 90);
+            config.videoDimNight = integer(json, "video_dim_night", 60, 0, 90);
+            if (bool(json, "weather", true)) {
+                config.weatherLat = json.optDouble("weather_lat", Double.NaN);
+                config.weatherLon = json.optDouble("weather_lon", Double.NaN);
+            }
+            config.weatherIcon = bool(json, "weather_icon", true);
+            config.downDrawer = bool(json, "down_drawer", false);
+        }
+        if (json != null) config.videoRotationMinutes = integer(json, "video_rotation_minutes", 5, 1, 240);
+        return config;
     }
 
     /**

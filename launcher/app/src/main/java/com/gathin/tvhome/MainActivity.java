@@ -295,6 +295,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** Tile menu's "Add to dock": the app waiting for a dock place in edit-dock mode, or null. */
     private String dockEditAppKey;
     private AppLibraryDialog appLibrary;
+    private VideoBackdrop videoBackdrop;
+    private WeatherLine weatherLine;
+    private DownDrawer downDrawer;
     private boolean appLibrarySelection;
     private boolean libraryOkOpens;
     private boolean libraryFocusPending;
@@ -395,6 +398,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         homeAppKeys = RemoteKeys.parseAppKeys(cfg.appKeys);
         appLibrarySelection = cfg.appLibrarySelection;
         libraryOkOpens = cfg.libraryOkOpens;
+        AppLibraryDialog.hiddenFromLibrary = new HashSet<>(cfg.libraryHiddenApps);
+        if (!Double.isNaN(cfg.weatherLat) && !Double.isNaN(cfg.weatherLon)) {
+            weatherLine = new WeatherLine(findViewById(R.id.weatherLine), cfg.weatherLat, cfg.weatherLon, cfg.weatherIcon);
+        }
+        if (cfg.videoWallpaper) videoBackdrop = new VideoBackdrop(this, findViewById(R.id.root), cfg.videoRotationMinutes, cfg.videoDim, cfg.videoDimEvening, cfg.videoDimNight);
         // restore_key_services: after a force stop, put back the remote's accessibility helpers that Android took
         // off the list (needs WRITE_SECURE_SETTINGS, granted by build-and-install with RESTORE_KEY_SERVICES=1).
         if (cfg.restoreKeyServices) ServiceRepair.restore(this);
@@ -443,11 +451,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // The glow is one bitmap, so its alpha can be applied while drawing it. Otherwise every frame of
         // a fade renders it into a full-screen offscreen buffer first.
         ambient.forceHasOverlappingRendering(false);
-        ambientGlow = cfg.ambientGlow;
+        ambientGlow = cfg.ambientGlow && !cfg.videoWallpaper;   // the glow would wash out a background video
         appGlow = cfg.appGlow;
         if (!ambientGlow) ambient.setVisibility(View.GONE);
         heroName = findViewById(R.id.heroName);
         hero = findViewById(R.id.hero);
+        if (cfg.downDrawer) downDrawer = new DownDrawer(this, root, downHost);
         // The hero is now a group (name, and the cinematic lines): without this every fade of the default
         // shelf would render it through an offscreen buffer first, as the glow above notes.
         hero.forceHasOverlappingRendering(false);
@@ -737,6 +746,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             libraryFromTopBar = true;   // closing it goes back to this button, not to the pill after the last row
         });
         btnLibraryTop.setVisibility(cfg.libraryButton && cfg.appLibrary ? View.VISIBLE : View.GONE);
+        if (cfg.downDrawer) quietTopBar();
         addTopBarApps(cfg.topBarApps, cfg.launchActions);
         iconOnlyButtons = cfg.iconOnlyButtons;
         topMenu = cfg.topMenu;
@@ -943,6 +953,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onResume() {
         super.onResume();
+        if (videoBackdrop != null) videoBackdrop.start();
+        if (weatherLine != null) weatherLine.resume();
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1154,6 +1166,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         super.onPause();
+        if (videoBackdrop != null) videoBackdrop.stop();
+        if (weatherLine != null) weatherLine.pause();
+        if (downDrawer != null) downDrawer.close(false);
         root.removeCallbacks(showIdleClock);
         endReorder();   // Home or another app while reordering keeps the order so far
         wallpaperPlayer.stop();
@@ -1207,6 +1222,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
+            // Back from the screensaver or settings: the header may have settled after the glass was placed.
+            root.postDelayed(this::resnapGlass, 350);
             startPendingSettingsReorder();
             if (libraryFocusPending && appLibrary == null) focusLibrary();
             showCardPrompt();
@@ -1259,6 +1276,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (downDrawer != null && !reordering && downDrawer.onKey(event)) return true;
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window.
         if (event.getKeyCode() >= 1000 && RemoteKeys.handle(this, event, homeAppKeys.get(event.getKeyCode()), null)) return true;
         if (handleSettingsKey(event)) return true;
@@ -1705,6 +1723,81 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             revealRect.set(0, -(int) pad * 2, item.getWidth(), item.getHeight() + (int) pad);
             grid.requestChildRectangleOnScreen(item, revealRect, reducedMotion);
         }
+    }
+
+    /**
+     * Local addition (with down_drawer): the library button leaves the top bar for the Down panel, and the bar sits
+     * in the corner, faint until focus reaches it, so Home stays clean.
+     */
+    private void quietTopBar() {
+        btnLibraryTop.setVisibility(View.GONE);
+        View top = findViewById(R.id.topButtons);
+        top.setAlpha(0.3f);
+        top.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            int[] loc = new int[2];
+            v.getLocationOnScreen(loc);
+            float baseX = loc[0] - v.getTranslationX(), baseY = loc[1] - v.getTranslationY();
+            int screenW = getResources().getDisplayMetrics().widthPixels;
+            v.setTranslationX(screenW - 22 * density - (baseX + v.getWidth()));
+            v.setTranslationY(18 * density - baseY);
+        });
+        top.getViewTreeObserver().addOnGlobalFocusChangeListener((oldF, newF) -> {
+            boolean in = false;
+            for (Object p = newF; p instanceof View; p = ((View) p).getParent()) {
+                if (p == top) { in = true; break; }
+            }
+            if (in == (top.getTag() == Boolean.TRUE)) return;
+            top.setTag(in);
+            top.animate().cancel();
+            top.animate().alpha(in ? 1f : 0.3f).setStartDelay(in ? 0 : 1500).setDuration(in ? 150 : 600).start();
+        });
+    }
+
+    /** Local addition: what the Down panel needs from Home. */
+    private final DownDrawer.Host downHost = new DownDrawer.Host() {
+        @Override public int dockFocusWithNothingBelow() {
+            int pos = focusedTilePosition();
+            boolean onlyDock = adapter.appCount() <= COLUMNS;
+            return pos >= 0 && pos < COLUMNS && onlyDock && openPopup == null && appLibrary == null ? pos : -1;
+        }
+        @Override public int dockCount() { return Math.min(COLUMNS, adapter.appCount()); }
+        @Override public String packageAt(int p) { return adapter.packageAt(p); }
+        @Override public String labelAt(int p) { return adapter.labelAt(p); }
+        @Override public android.graphics.drawable.Drawable artworkAt(int p) { return adapter.artworkAt(p); }
+        @Override public void launchAt(int p) { adapter.launchAt(p); }
+        @Override public void slideHome(float dy, boolean open) {
+            if (open) {
+                hideGlass();
+                // Never slide the dock over the clock and date: stop just under the header.
+                View header = findViewById(R.id.leftBlock);
+                View first = grid.getChildCount() > 0 ? grid.getChildAt(0) : null;
+                if (header != null && first != null) {
+                    int[] h = new int[2], d = new int[2];
+                    header.getLocationOnScreen(h);
+                    first.getLocationOnScreen(d);
+                    float room = d[1] - grid.getTranslationY() - (h[1] + header.getHeight()) - 20 * density;
+                    dy = Math.max(dy, -Math.max(0f, room));
+                }
+            }
+            grid.animate().translationY(dy).setDuration(220).start();
+            hero.animate().translationY(dy).alpha(open ? 0f : 1f).setDuration(220).start();
+        }
+        @Override public void openLibrary() { onLibraryRequested(); }
+        @Override public void focusDock(int p) {
+            RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(p);
+            View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
+            if (card != null) card.requestFocus();
+            root.postDelayed(MainActivity.this::resnapGlass, 260);
+        }
+    };
+
+    /** Local fix: puts the glass back on the focused tile wherever that tile now is, size or not. */
+    private void resnapGlass() {
+        if (isDestroyed() || adapter.appCount() == 0 || libraryFocusPending) return;
+        int pos = Math.max(0, Math.min(lastFocused, adapter.appCount() - 1));
+        RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(pos);
+        View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
+        if (card != null && card.getWidth() > 0 && card.isFocused()) onTileFocused(pos, card);
     }
 
     /** Refits the glass to the focused holder once the grid layout and tile dimensions settle. */

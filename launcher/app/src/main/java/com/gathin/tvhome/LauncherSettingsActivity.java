@@ -34,6 +34,8 @@ public final class LauncherSettingsActivity extends Activity {
     private final TextView[] dockChoices = new TextView[DOCK_OPACITIES.length];
     private TextView wallpaperChoice;
     private TextView animationsChoice;
+    private TextView videoChoice;
+    private TextView nightBrightnessChoice;
     private TextView advancedChoice;
     private TextView followThemeChoice;
     private TextView openOnStartChoice;
@@ -108,6 +110,27 @@ public final class LauncherSettingsActivity extends Activity {
         }
         wallpaperChoice = findViewById(R.id.wallpaperChoice);
         wallpaperChoice.setOnClickListener(v -> showWallpaperPicker());
+        videoChoice = findViewById(R.id.videoChoice);
+        if (config.videoAvailable) {
+            videoChoice.setOnClickListener(v -> {
+                choices.edit().putBoolean(Config.VIDEO_CHOICE_KEY,
+                        !choices.getBoolean(Config.VIDEO_CHOICE_KEY, true)).apply();
+                changed();
+                refresh();
+            });
+        } else {
+            videoChoice.setVisibility(android.view.View.GONE);
+        }
+        nightBrightnessChoice = findViewById(R.id.nightBrightnessChoice);
+        android.content.Intent brightnessApp = getPackageManager().getLaunchIntentForPackage("io.github.maxhayim.brightness");
+        if (brightnessApp == null) brightnessApp = getPackageManager().getLeanbackLaunchIntentForPackage("io.github.maxhayim.brightness");
+        if (brightnessApp != null) {
+            final android.content.Intent open = brightnessApp;
+            nightBrightnessChoice.setText(R.string.night_brightness_row);
+            nightBrightnessChoice.setOnClickListener(v -> startActivity(open));
+        } else {
+            nightBrightnessChoice.setVisibility(android.view.View.GONE);
+        }
         animationsChoice = findViewById(R.id.animationsChoice);
         animationsChoice.setOnClickListener(v -> {
             animations = !animations;
@@ -286,6 +309,8 @@ public final class LauncherSettingsActivity extends Activity {
         for (int i = 0; i < dockChoices.length; i++) {
             dockChoices[i].setSelected(dockOpacity == DOCK_OPACITIES[i]);
         }
+        videoChoice.setText(getString(R.string.video_state,
+                getString(choices.getBoolean(Config.VIDEO_CHOICE_KEY, true) ? R.string.on : R.string.off)));
         animationsChoice.setText(getString(R.string.animations_state,
                 getString(animations ? R.string.on : R.string.off)));
         advancedChoice.setText(getString(R.string.advanced_effects_state,

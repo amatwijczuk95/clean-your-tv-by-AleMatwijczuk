@@ -46,6 +46,8 @@
     <string name="columns_label">Aplicaciones por fila</string>
     <string name="dock_opacity_label">Opacidad de la barra del dock</string>
     <string name="animations_state">Animaciones: %1$s</string>
+    <string name="video_state">Videos de fondo: %1$s</string>
+    <string name="night_brightness_row">Brillo nocturno…</string>
     <string name="advanced_effects">Efectos avanzados</string>
     <string name="advanced_effects_state">Efectos avanzados: %1$s</string>
     <string name="open_on_start_label">Abrir al iniciar</string>
@@ -144,4 +146,12 @@
     <string name="race_countdown_hours">%1$dh %2$dm</string>
     <string name="race_countdown_days">%1$dd %2$dh</string>
     <string name="last_opened">Abierta por última vez %1$s</string>
+    <string name="down_drawer_title">Recientes</string>
+    <string name="down_drawer_search">🔍  Buscar</string>
+    <string name="down_drawer_all_apps">⊞  Todas las apps</string>
+    <string name="down_drawer_forecast">Próximas horas</string>
+    <string name="down_drawer_empty">Las apps que abras van a aparecer acá</string>
+    <string name="forecast_by_hour">Por hora  ▸</string>
+    <string name="forecast_by_day">Por día  ▸</string>
+    <string name="forecast_today">Hoy</string>
 </resources>

@@ -1,0 +1,9 @@
+# Noblex (Skyworth shinjuku) Android 11: system extras the owner doesn't use (2026-10-27).
+# Undo: tools/restore.sh work/system-extras.txt
+com.smartdevice.common.demonow
+fusion.android.tv.demo
+com.Smartdevice.emanual
+com.mstar.android.tv.disclaimercustomization
+com.android.deskclock
+com.google.android.videos
+com.overdevs.at4k

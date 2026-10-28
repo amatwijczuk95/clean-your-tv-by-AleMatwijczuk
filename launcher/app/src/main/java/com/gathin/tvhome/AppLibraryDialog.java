@@ -143,6 +143,9 @@ final class AppLibraryDialog {
         if (popup.isShowing()) popup.update(width, height);
     }
 
+    /** library_hidden_apps as in force; set by MainActivity on every config load. */
+    static volatile Set<String> hiddenFromLibrary = java.util.Collections.emptySet();
+
     AppLibraryDialog(Activity activity, boolean animations, boolean reducedMotion, boolean selectionMode, boolean okOpens, Predicate<String> onHome, Runnable changed, Runnable dismissed) {
         this.activity = activity;
         this.animations = animations;
@@ -220,6 +223,7 @@ final class AppLibraryDialog {
         int load = loads.start(reveal);
         PackageManager pm = activity.getPackageManager();
         String self = activity.getPackageName();
+        Set<String> skip = hiddenFromLibrary;
         LOADER.execute(() -> {
             Map<String, ResolveInfo> unique = new LinkedHashMap<>();
             Set<String> tv = new HashSet<>();
@@ -229,7 +233,7 @@ final class AppLibraryDialog {
                     if (info.activityInfo == null || !info.activityInfo.exported) continue;
                     String pkg = info.activityInfo.packageName;
                     if (Intent.CATEGORY_LEANBACK_LAUNCHER.equals(category)) tv.add(pkg);
-                    if (!pkg.equals(self) && !unique.containsKey(pkg)) unique.put(pkg, info);
+                    if (!pkg.equals(self) && !skip.contains(pkg) && !unique.containsKey(pkg)) unique.put(pkg, info);
                 }
             }
             Map<String, String> names = new HashMap<>();

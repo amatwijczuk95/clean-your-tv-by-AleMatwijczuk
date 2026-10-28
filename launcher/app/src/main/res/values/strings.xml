@@ -58,6 +58,8 @@
     <string name="wallpaper_applied">Wallpaper changed</string>
     <string name="wallpaper_theme_default">Theme default</string>
     <string name="animations_state">Animations: %1$s</string>
+    <string name="video_state">Background videos: %1$s</string>
+    <string name="night_brightness_row">Night brightness…</string>
     <string name="advanced_effects">Advanced effects</string>
     <string name="advanced_effects_state">Advanced effects: %1$s</string>
     <string name="open_on_start_label">Open on start</string>
@@ -152,4 +154,12 @@
     <!-- Cinematic top shelf (cinematic_home): the line under the focused dock app's name; %1$s is when it was
          last opened, e.g. "5 minutes ago" or "yesterday, 9:40 pm". -->
     <string name="last_opened">Last opened %1$s</string>
+    <string name="down_drawer_title">Recent</string>
+    <string name="down_drawer_search">🔍  Search</string>
+    <string name="down_drawer_all_apps">⊞  All apps</string>
+    <string name="down_drawer_forecast">Next hours</string>
+    <string name="down_drawer_empty">Apps you open will show here</string>
+    <string name="forecast_by_hour">By hour  ▸</string>
+    <string name="forecast_by_day">By day  ▸</string>
+    <string name="forecast_today">Today</string>
 </resources>
