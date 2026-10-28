@@ -1,0 +1,1701 @@
+diff --git a/addons/brightness/app/src/main/java/io/github/maxhayim/brightness/Dimming.java b/addons/brightness/app/src/main/java/io/github/maxhayim/brightness/Dimming.java
+index e51092b3..bf20d54b 100644
+--- a/addons/brightness/app/src/main/java/io/github/maxhayim/brightness/Dimming.java
++++ b/addons/brightness/app/src/main/java/io/github/maxhayim/brightness/Dimming.java
+@@ -22,14 +22,14 @@ final class Dimming {
+ 
+     static final class Settings {
+         /** The master switch. Off draws nothing, whatever the rest says. */
+-        boolean on;
+-        int brightness = 70;
++        boolean on = true;
++        int brightness = 100;
+         Night night = Night.SCHEDULED;
+-        int nightBrightness = 40;
+-        int warmth = 50;
++        int nightBrightness = 60;
++        int warmth = 30;
+         /** Minutes after midnight, local time. */
+-        int nightStart = 21 * 60;
+-        int nightEnd = 7 * 60;
++        int nightStart = 23 * 60;
++        int nightEnd = 6 * 60;
+         /** The TV's own picture at night too (Realtek TVs): the values below, and the day's back in the morning. */
+         boolean tvPicture;
+         Picture tvNight = Picture.NIGHT;
+@@ -153,10 +153,26 @@ final class Dimming {
+         }
+     }
+ 
++    /** Local change: a scheduled night eases in over this many minutes instead of dropping at once. */
++    static final int RAMP_MINUTES = 45;
++
++    /** Minutes since a scheduled night began, or -1 outside one. */
++    static int minutesIntoNight(Settings s, int minute) {
++        if (s.night != Night.SCHEDULED || !inWindow(s.nightStart, s.nightEnd, minute)) return -1;
++        return wrap(minute - s.nightStart);
++    }
++
+     static Level level(Settings s, int minute) {
+         if (!s.on) return new Level(MAX_BRIGHTNESS, 0, false);
+         boolean night = nightNow(s, minute);
+-        return night ? new Level(s.nightBrightness, s.warmth, true) : new Level(s.brightness, 0, false);
++        if (!night) return new Level(s.brightness, 0, false);
++        int into = minutesIntoNight(s, minute);
++        if (into >= 0 && into < RAMP_MINUTES) {
++            float f = (into + 1) / (float) RAMP_MINUTES;
++            return new Level(Math.round(s.brightness + (s.nightBrightness - s.brightness) * f),
++                    Math.round(s.warmth * f), true);
++        }
++        return new Level(s.nightBrightness, s.warmth, true);
+     }
+ 
+     /**
+@@ -190,6 +206,8 @@ final class Dimming {
+      */
+     static int minutesToNextChange(Settings s, int minute) {
+         if (!s.on || s.night != Night.SCHEDULED || s.nightStart == s.nightEnd) return -1;
++        int into = minutesIntoNight(s, minute);
++        if (into >= 0 && into < RAMP_MINUTES) return 1;
+         int toStart = wrap(s.nightStart - minute);
+         int toEnd = wrap(s.nightEnd - minute);
+         if (toStart == 0) toStart = DAY_MINUTES;
+diff --git a/launcher/app/src/main/AndroidManifest.xml b/launcher/app/src/main/AndroidManifest.xml
+index 701b5feb..b5f9a75b 100644
+--- a/launcher/app/src/main/AndroidManifest.xml
++++ b/launcher/app/src/main/AndroidManifest.xml
+@@ -8,6 +8,8 @@
+     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+ 
+     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
++    <!-- Local addition: the temperature line (api.open-meteo.com only, while Home is in front). -->
++    <uses-permission android:name="android.permission.INTERNET" />
+     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+     <!-- Needed since Android 10 to read the Wi-Fi network name for the network pill. Never requested at
+          runtime: build-and-install grants it with pm grant, so lint's Android 12 "ask for COARSE with
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java b/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java
+index 41825a1a..ce950eed 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java
+@@ -521,6 +521,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+         });
+     }
+ 
++    /** Local: opens the tile at this position, as a click on it would. */
++    void launchAt(int position) {
++        if (position >= 0 && position < items.size()) launch(items.get(position));
++    }
++
+     /** Opens the tile's activity by explicit component, with no extras: a card can name nothing else. */
+     private void launch(Entry e) {
+         if (e.kind == Entry.HOME_SETTINGS) {
+@@ -543,7 +548,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+         }
+         try {
+             ctx.startActivity(i);
+-            if (cinematic) LastOpened.record(ctx, e.pkg);
++            LastOpened.record(ctx, e.pkg);   // local: also feeds the Down panel's recent order
+             if (advancedEffects && !reducedMotion && ctx instanceof Activity) {
+                 ((Activity) ctx).overridePendingTransition(R.anim.app_open_enter, R.anim.app_open_exit);
+             }
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/AppLibraryDialog.java b/launcher/app/src/main/java/com/gathin/tvhome/AppLibraryDialog.java
+index e62db463..b3478b10 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/AppLibraryDialog.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/AppLibraryDialog.java
+@@ -143,6 +143,9 @@ final class AppLibraryDialog {
+         if (popup.isShowing()) popup.update(width, height);
+     }
+ 
++    /** library_hidden_apps as in force; set by MainActivity on every config load. */
++    static volatile Set<String> hiddenFromLibrary = java.util.Collections.emptySet();
++
+     AppLibraryDialog(Activity activity, boolean animations, boolean reducedMotion, boolean selectionMode, boolean okOpens, Predicate<String> onHome, Runnable changed, Runnable dismissed) {
+         this.activity = activity;
+         this.animations = animations;
+@@ -220,6 +223,7 @@ final class AppLibraryDialog {
+         int load = loads.start(reveal);
+         PackageManager pm = activity.getPackageManager();
+         String self = activity.getPackageName();
++        Set<String> skip = hiddenFromLibrary;
+         LOADER.execute(() -> {
+             Map<String, ResolveInfo> unique = new LinkedHashMap<>();
+             Set<String> tv = new HashSet<>();
+@@ -229,7 +233,7 @@ final class AppLibraryDialog {
+                     if (info.activityInfo == null || !info.activityInfo.exported) continue;
+                     String pkg = info.activityInfo.packageName;
+                     if (Intent.CATEGORY_LEANBACK_LAUNCHER.equals(category)) tv.add(pkg);
+-                    if (!pkg.equals(self) && !unique.containsKey(pkg)) unique.put(pkg, info);
++                    if (!pkg.equals(self) && !skip.contains(pkg) && !unique.containsKey(pkg)) unique.put(pkg, info);
+                 }
+             }
+             Map<String, String> names = new HashMap<>();
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/Config.java b/launcher/app/src/main/java/com/gathin/tvhome/Config.java
+index 5d4b78fb..c429585d 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/Config.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/Config.java
+@@ -62,6 +62,24 @@ final class Config {
+     final List<String> hiddenApps;
+     /** Packages pre-seeded into the App library's "added" set (config.xml, library_apps); empty by default. */
+     final List<String> libraryApps;
++    /** Packages the App library never lists (config.xml or a theme, library_hidden_apps); empty by default. */
++    List<String> libraryHiddenApps = Collections.emptyList();
++    /** Local experiment: a looping muted video behind Home (theme only, "video_wallpaper"); off by default. */
++    boolean videoWallpaper;
++    /** Minutes each background video loops before the next one (theme, "video_rotation_minutes"). */
++    int videoRotationMinutes = 5;
++    /** The theme offers background videos (the Launcher settings row shows only then). */
++    boolean videoAvailable;
++    /** Percent of black over the videos (theme, "video_dim"). */
++    int videoDim = 25;
++    /** Darkness over the videos in the evening (21-22 h) and at night (23-6 h), theme "video_dim_evening"/"video_dim_night". */
++    int videoDimEvening = 45, videoDimNight = 60;
++    static final String VIDEO_CHOICE_KEY = "video_on";
++    /** Local addition: where the temperature under the date comes from (theme weather_lat / weather_lon); NaN = off. */
++    double weatherLat = Double.NaN, weatherLon = Double.NaN;
++    boolean weatherIcon = true;
++    /** Local addition: the Down panel under the dock (theme "down_drawer"). */
++    boolean downDrawer;
+     final String liveTvPackage;
+     final String liveTvAction;
+     final String liveTvInputId;
+@@ -406,6 +424,7 @@ final class Config {
+         boolean fillDock = res.getBoolean(R.bool.fill_dock);
+         List<String> hidden = new ArrayList<>(Arrays.asList(res.getStringArray(R.array.hidden_apps)));
+         List<String> libraryApps = new ArrayList<>(Arrays.asList(res.getStringArray(R.array.library_apps)));
++        List<String> libraryHidden = new ArrayList<>(Arrays.asList(res.getStringArray(R.array.library_hidden_apps)));
+         String liveTv = res.getString(R.string.live_tv_package).trim();
+         String liveTvAction = res.getString(R.string.live_tv_action).trim();
+         String liveTvInputId = res.getString(R.string.live_tv_input_id).trim();
+@@ -511,6 +530,7 @@ final class Config {
+             fillDock = bool(json, "fill_dock", fillDock);
+             hidden = stringList(json, "hidden_apps", hidden);
+             libraryApps = stringList(json, "library_apps", libraryApps);
++            libraryHidden = stringList(json, "library_hidden_apps", libraryHidden);
+             liveTv = string(json, "live_tv_package", liveTv);
+             liveTvAction = string(json, "live_tv_action", liveTvAction);
+             liveTvInputId = string(json, "live_tv_input_id", liveTvInputId);
+@@ -652,7 +672,7 @@ final class Config {
+         Festival festival = json == null ? Festival.NONE : Festival.parse(string(json, "festival", ""),
+                 string(json, "festival_until", ""), string(json, "greeting", ""), string(json, "accent_color", ""));
+ 
+-        return new Config(dock, fillDock, hidden, libraryApps, liveTv, liveTvAction, liveTvInputId, packageMap(launchActions), packageMap(appLabels),
++        Config config = new Config(dock, fillDock, hidden, libraryApps, liveTv, liveTvAction, liveTvInputId, packageMap(launchActions), packageMap(appLabels),
+                 packageMap(appBanners), panelService, panelAction, panelExtra, coocaaSources, inputAction, inputSources, inputUriScheme, Math.max(1, columns),
+                 Math.max(0, rowsBelow), animations, advancedEffects, shamsi, greetingName, moduleCards, reducedMotion, bootToLiveTv,
+                 openOnStartChoice, dockTitle, dockRow, topMenu, launcherSettingsButton, reorderButton, showNetworkPill, showInputsPill,
+@@ -666,6 +686,22 @@ final class Config {
+                 consumeVolumeKeys, powerOnHome, homeLongPressHome, wifiStatusWarnings, topBarApps, showGreeting, headerWhite, clockWallpaper,
+                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
+                 dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly);
++        config.libraryHiddenApps = Collections.unmodifiableList(libraryHidden);
++        config.videoAvailable = json != null && bool(json, "video_wallpaper", false);
++        config.videoWallpaper = config.videoAvailable && choices.getBoolean(VIDEO_CHOICE_KEY, true);
++        if (json != null) {
++            config.videoDim = integer(json, "video_dim", 25, 0, 90);
++            config.videoDimEvening = integer(json, "video_dim_evening", 45, 0, 90);
++            config.videoDimNight = integer(json, "video_dim_night", 60, 0, 90);
++            if (bool(json, "weather", true)) {
++                config.weatherLat = json.optDouble("weather_lat", Double.NaN);
++                config.weatherLon = json.optDouble("weather_lon", Double.NaN);
++            }
++            config.weatherIcon = bool(json, "weather_icon", true);
++            config.downDrawer = bool(json, "down_drawer", false);
++        }
++        if (json != null) config.videoRotationMinutes = integer(json, "video_rotation_minutes", 5, 1, 240);
++        return config;
+     }
+ 
+     /**
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java b/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java
+new file mode 100644
+index 00000000..70e16ec1
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java
+@@ -0,0 +1,423 @@
++package com.gathin.tvhome;
++
++import android.app.Activity;
++import android.content.Intent;
++import android.graphics.Color;
++import android.graphics.Outline;
++import android.graphics.drawable.Drawable;
++import android.graphics.drawable.GradientDrawable;
++import android.view.Gravity;
++import android.view.KeyEvent;
++import android.view.View;
++import android.view.ViewGroup;
++import android.view.ViewOutlineProvider;
++import android.widget.FrameLayout;
++import android.widget.ImageView;
++import android.widget.LinearLayout;
++import android.widget.TextView;
++
++import java.util.ArrayList;
++import java.util.List;
++
++/**
++ * Local addition (theme key "down_drawer"): Down from the dock, when no grid row sits under it, slides the dock up
++ * and shows a quiet panel at the bottom: a Search pill (the TV's own universal search) and the dock apps in the
++ * order they were last opened. Up or Back puts everything back. Nothing is built until it is opened.
++ */
++final class DownDrawer {
++    interface Host {
++        /** The dock position focused now, or -1 when focus is not on a dock tile with nothing below it. */
++        int dockFocusWithNothingBelow();
++        int dockCount();
++        String packageAt(int position);
++        String labelAt(int position);
++        Drawable artworkAt(int position);
++        void launchAt(int position);
++        /** Hide the glass and slide the dock and shelf up by dy pixels (0 puts them back). */
++        void slideHome(float dy, boolean open);
++        /** Focus the dock tile at this position and put the glass back on it. */
++        void focusDock(int position);
++        /** Open the App library (every installed app). */
++        void openLibrary();
++    }
++
++    private final Activity activity;
++    private final ViewGroup root;
++    private final Host host;
++    private final float dp;
++    private LinearLayout panel;
++    private LinearLayout row;
++    private LinearLayout forecast;
++    private LinearLayout columns;
++    private TextView toggle;
++    private boolean byDay;
++    /** A key whose release still has to be swallowed after its press acted. */
++    private int swallowUp;
++    /** Apps opened within this long show under Recent. */
++    private static final long RECENT_MS = 14L * 24 * 60 * 60 * 1000;
++    private boolean open;
++    private int returnTo;
++
++    DownDrawer(Activity activity, ViewGroup root, Host host) {
++        this.activity = activity;
++        this.root = root;
++        this.host = host;
++        this.dp = activity.getResources().getDisplayMetrics().density;
++    }
++
++    boolean isOpen() {
++        return open;
++    }
++
++    /** Handles the keys that open and close the panel; everything else goes on as usual. */
++    boolean onKey(KeyEvent e) {
++        int code = e.getKeyCode();
++        boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
++        if (!down && code == swallowUp) {
++            swallowUp = 0;
++            return true;
++        }
++        if (!open) {
++            if (code != KeyEvent.KEYCODE_DPAD_DOWN) return false;
++            int pos = host.dockFocusWithNothingBelow();
++            if (pos < 0) return false;
++            if (down && e.getRepeatCount() == 0) openPanel(pos);
++            return true;
++        }
++        View f = activity.getCurrentFocus();
++        boolean inPanel = f != null && isInside(f);
++        boolean inForecast = inPanel && toggle != null && f == toggle;
++        if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE) {
++            if (!down) close(true);
++            return true;
++        }
++        if (code == KeyEvent.KEYCODE_DPAD_UP && inPanel) {
++            if (down) {
++                swallowUp = code;
++                if (!inForecast && forecast.getVisibility() == View.VISIBLE) toggle.requestFocus();
++                else close(true);
++            }
++            return true;
++        }
++        if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
++            if (down && inForecast && row.getChildCount() > 0) row.getChildAt(0).requestFocus();
++            return true;
++        }
++        if (inForecast && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) return true;
++        if (inPanel && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
++            // Move along the row here: Home's own grid navigation would otherwise pull focus back to the dock.
++            if (down) {
++                int i = indexInRow(f);
++                int next = i + (code == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
++                while (next >= 0 && next < row.getChildCount() && !row.getChildAt(next).isFocusable()) {
++                    next += code == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1;
++                }
++                if (next >= 0 && next < row.getChildCount()) row.getChildAt(next).requestFocus();
++            }
++            return true;
++        }
++        if (!inPanel) {
++            // Focus slipped out while the panel is up: bring it back rather than let OK open a dock app.
++            if (down && row.getChildCount() > 0) row.getChildAt(0).requestFocus();
++            return true;
++        }
++        return false;
++    }
++
++    private int indexInRow(View v) {
++        for (Object p = v; p instanceof View; p = ((View) p).getParent()) {
++            if (((View) p).getParent() == row) return row.indexOfChild((View) p);
++        }
++        return -1;
++    }
++
++    private boolean isInside(View v) {
++        for (Object p = v; p instanceof View; p = ((View) p).getParent()) {
++            if (p == panel) return true;
++        }
++        return false;
++    }
++
++    private void openPanel(int fromPosition) {
++        returnTo = fromPosition;
++        if (panel == null) build();
++        fill();
++        open = true;
++        panel.setVisibility(View.VISIBLE);
++        panel.setAlpha(0f);
++        panel.post(() -> {
++            if (!open) return;
++            host.slideHome(-panel.getHeight() + 24 * dp, true);
++            panel.animate().alpha(1f).setDuration(180).start();
++            View first = row.getChildCount() > 0 ? row.getChildAt(0) : null;
++            if (first != null) first.requestFocus();
++        });
++    }
++
++    /** Puts Home back; animate is false when an app is opening or Home is leaving. */
++    void close(boolean animate) {
++        if (!open) return;
++        open = false;
++        panel.animate().cancel();
++        if (animate) {
++            panel.animate().alpha(0f).setDuration(140).withEndAction(() -> {
++                if (!open) panel.setVisibility(View.GONE);
++            }).start();
++        } else {
++            panel.setAlpha(0f);
++            panel.setVisibility(View.GONE);
++        }
++        host.slideHome(0f, false);
++        host.focusDock(returnTo);
++    }
++
++    private void build() {
++        panel = new LinearLayout(activity);
++        panel.setOrientation(LinearLayout.VERTICAL);
++        GradientDrawable shade = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
++                new int[]{0x00000000, 0xB3000000, 0xE6000000});
++        panel.setBackground(shade);
++        int side = Math.round(56 * dp);
++        panel.setPadding(side, Math.round(26 * dp), side, Math.round(18 * dp));
++        panel.setVisibility(View.GONE);
++
++        forecast = new LinearLayout(activity);
++        forecast.setOrientation(LinearLayout.HORIZONTAL);
++        forecast.setGravity(Gravity.CENTER_VERTICAL);
++        GradientDrawable card = new GradientDrawable();
++        card.setCornerRadius(16 * dp);
++        card.setColor(0x1AFFFFFF);
++        card.setStroke(Math.round(1 * dp), 0x26FFFFFF);
++        forecast.setBackground(card);
++        forecast.setPadding(Math.round(14 * dp), Math.round(10 * dp), Math.round(18 * dp), Math.round(10 * dp));
++        toggle = new TextView(activity);
++        toggle.setFocusable(true);
++        toggle.setFocusableInTouchMode(true);
++        toggle.setTextColor(0xD9FFFFFF);
++        toggle.setTextSize(13f);
++        toggle.setGravity(Gravity.CENTER);
++        toggle.setMinWidth(Math.round(120 * dp));
++        toggle.setPadding(Math.round(14 * dp), Math.round(10 * dp), Math.round(14 * dp), Math.round(10 * dp));
++        toggle.setBackground(pillBackground(false));
++        toggle.setOnFocusChangeListener((v, has) -> v.setBackground(pillBackground(has)));
++        toggle.setOnClickListener(v -> {
++            byDay = !byDay;
++            fillForecast();
++        });
++        forecast.addView(toggle);
++        columns = new LinearLayout(activity);
++        columns.setOrientation(LinearLayout.HORIZONTAL);
++        columns.setGravity(Gravity.CENTER_VERTICAL);
++        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
++                ViewGroup.LayoutParams.WRAP_CONTENT);
++        clp.setMarginStart(Math.round(18 * dp));
++        forecast.addView(columns, clp);
++        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
++                ViewGroup.LayoutParams.WRAP_CONTENT);
++        flp.bottomMargin = Math.round(16 * dp);
++        panel.addView(forecast, flp);
++
++        TextView title = new TextView(activity);
++        title.setText(R.string.down_drawer_title);
++        title.setTextColor(0xA6FFFFFF);
++        title.setTextSize(13f);
++        title.setLetterSpacing(0.14f);
++        title.setAllCaps(true);
++        title.setPadding(Math.round(4 * dp), 0, 0, Math.round(12 * dp));
++        panel.addView(title);
++
++        row = new LinearLayout(activity);
++        row.setOrientation(LinearLayout.HORIZONTAL);
++        row.setGravity(Gravity.TOP);
++        row.setClipChildren(false);
++        row.setClipToPadding(false);
++        row.setPadding(Math.round(6 * dp), Math.round(6 * dp), Math.round(6 * dp), Math.round(6 * dp));
++        android.widget.HorizontalScrollView scroller = new android.widget.HorizontalScrollView(activity);
++        scroller.setHorizontalScrollBarEnabled(false);
++        scroller.setClipChildren(false);
++        scroller.setClipToPadding(false);
++        scroller.addView(row, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
++                ViewGroup.LayoutParams.WRAP_CONTENT));
++        panel.setClipChildren(false);
++        panel.addView(scroller, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
++                ViewGroup.LayoutParams.WRAP_CONTENT));
++
++        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
++                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
++        root.addView(panel, lp);
++    }
++
++    private void fill() {
++        fillForecast();
++        row.removeAllViews();
++        row.addView(pill(activity.getString(R.string.down_drawer_search), v -> openSearch()));
++        row.addView(pill(activity.getString(R.string.down_drawer_all_apps), v -> {
++            close(false);
++            host.openLibrary();
++        }));
++        long now = System.currentTimeMillis();
++        List<Integer> order = new ArrayList<>();
++        for (int i = 0; i < host.dockCount(); i++) {
++            long t = LastOpened.get(activity, host.packageAt(i));
++            if (t > 0 && now - t < RECENT_MS) order.add(i);
++        }
++        order.sort((a, b) -> Long.compare(LastOpened.get(activity, host.packageAt(b)),
++                LastOpened.get(activity, host.packageAt(a))));
++        for (int pos : order) row.addView(card(pos));
++        if (order.isEmpty()) {
++            TextView hint = new TextView(activity);
++            hint.setText(R.string.down_drawer_empty);
++            hint.setTextColor(0x80FFFFFF);
++            hint.setTextSize(13f);
++            hint.setGravity(Gravity.CENTER_VERTICAL);
++            hint.setMinHeight(Math.round(72 * dp));
++            hint.setPadding(Math.round(8 * dp), 0, 0, 0);
++            row.addView(hint);
++        }
++    }
++
++    private void fillForecast() {
++        List<String[]> items = byDay ? WeatherLine.daily() : WeatherLine.hourly();
++        if (WeatherLine.hourly().isEmpty() && WeatherLine.daily().isEmpty()) {
++            forecast.setVisibility(View.GONE);
++            return;
++        }
++        forecast.setVisibility(View.VISIBLE);
++        toggle.setText(byDay ? R.string.forecast_by_day : R.string.forecast_by_hour);
++        columns.removeAllViews();
++        for (String[] it : items) {
++            LinearLayout col = new LinearLayout(activity);
++            col.setOrientation(LinearLayout.VERTICAL);
++            col.setGravity(Gravity.CENTER_HORIZONTAL);
++            col.setMinimumWidth(Math.round((byDay ? 94 : 66) * dp));
++            col.setPadding(Math.round(2 * dp), 0, Math.round(2 * dp), 0);
++            col.addView(text(it[0], 12f, 0x99FFFFFF));
++            String main = (it[1].isEmpty() ? "" : it[1] + " ") + it[2] + (byDay ? "  " : "");
++            TextView big = text(main, byDay ? 15f : 16f, 0xF2FFFFFF);
++            if (byDay) {
++                android.text.SpannableString sp = new android.text.SpannableString(main + it[3]);
++                sp.setSpan(new android.text.style.ForegroundColorSpan(0x80FFFFFF), main.length(), sp.length(), 0);
++                big.setText(sp);
++            }
++            col.addView(big);
++            String r = byDay ? it[4] : it[3];
++            col.addView(text(r.isEmpty() ? " " : "☂︎ " + r, 11f, 0xCC8EC9FF));
++            columns.addView(col);
++        }
++    }
++
++    private TextView text(String t, float size, int color) {
++        TextView v = new TextView(activity);
++        v.setText(t);
++        v.setTextSize(size);
++        v.setTextColor(color);
++        v.setSingleLine(true);
++        v.setGravity(Gravity.CENTER_HORIZONTAL);
++        v.setPadding(0, Math.round(1 * dp), 0, Math.round(1 * dp));
++        return v;
++    }
++
++    private View pill(String text, View.OnClickListener click) {
++        TextView pill = new TextView(activity);
++        pill.setText(text);
++        pill.setTextColor(Color.WHITE);
++        pill.setTextSize(16f);
++        pill.setGravity(Gravity.CENTER);
++        pill.setFocusable(true);
++        pill.setFocusableInTouchMode(true);
++        int w = Math.round(128 * dp), h = Math.round(72 * dp);
++        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, h);
++        lp.setMarginEnd(Math.round(22 * dp));
++        pill.setLayoutParams(lp);
++        pill.setBackground(pillBackground(false));
++        pill.setOnFocusChangeListener((v, has) -> {
++            v.setBackground(pillBackground(has));
++            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setDuration(120).start();
++        });
++        pill.setOnClickListener(click);
++        return pill;
++    }
++
++    private Drawable pillBackground(boolean focused) {
++        GradientDrawable d = new GradientDrawable();
++        d.setCornerRadius(14 * dp);
++        d.setColor(focused ? 0x40FFFFFF : 0x24FFFFFF);
++        d.setStroke(Math.round((focused ? 2 : 1) * dp), focused ? 0xE6FFFFFF : 0x33FFFFFF);
++        return d;
++    }
++
++    private View card(int pos) {
++        LinearLayout col = new LinearLayout(activity);
++        col.setOrientation(LinearLayout.VERTICAL);
++        col.setFocusable(true);
++        col.setFocusableInTouchMode(true);
++        col.setClipChildren(false);
++        int w = Math.round(128 * dp), h = Math.round(72 * dp);
++        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT);
++        lp.setMarginEnd(Math.round(14 * dp));
++        col.setLayoutParams(lp);
++
++        FrameLayout frame = new FrameLayout(activity);
++        ImageView art = new ImageView(activity);
++        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
++        Drawable d = host.artworkAt(pos);
++        if (d != null && d.getConstantState() != null) d = d.getConstantState().newDrawable().mutate();
++        art.setImageDrawable(d);
++        art.setBackgroundColor(0xFF1A1A1A);
++        final float radius = 10 * dp;
++        frame.setOutlineProvider(new ViewOutlineProvider() {
++            @Override public void getOutline(View v, Outline o) {
++                o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), radius);
++            }
++        });
++        frame.setClipToOutline(true);
++        frame.addView(art, new FrameLayout.LayoutParams(w, h));
++        col.addView(frame, new LinearLayout.LayoutParams(w, h));
++
++        TextView name = new TextView(activity);
++        name.setText(host.labelAt(pos));
++        name.setTextColor(0xE6FFFFFF);
++        name.setTextSize(13f);
++        name.setSingleLine(true);
++        name.setPadding(Math.round(2 * dp), Math.round(8 * dp), 0, 0);
++        col.addView(name);
++
++        TextView when = new TextView(activity);
++        long t = LastOpened.get(activity, host.packageAt(pos));
++        when.setText(t > 0 ? LastOpened.describe(activity, t) : "");
++        when.setTextColor(0x80FFFFFF);
++        when.setTextSize(11f);
++        when.setSingleLine(true);
++        when.setPadding(Math.round(2 * dp), Math.round(2 * dp), 0, 0);
++        col.addView(when);
++
++        col.setOnFocusChangeListener((v, has) -> {
++            GradientDrawable ring = new GradientDrawable();
++            ring.setCornerRadius(radius);
++            ring.setStroke(Math.round(2.5f * dp), 0xF2FFFFFF);
++            frame.setForeground(has ? ring : null);
++            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setDuration(120).start();
++        });
++        col.setOnClickListener(v -> {
++            close(false);
++            host.launchAt(pos);
++        });
++        return col;
++    }
++
++    private void openSearch() {
++        Intent[] tries = {
++                new Intent("android.search.action.GLOBAL_SEARCH"),
++                new Intent(Intent.ACTION_ASSIST),
++                new Intent(Intent.ACTION_SEARCH_LONG_PRESS)};
++        for (Intent i : tries) {
++            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++            try {
++                activity.startActivity(i);
++                return;
++            } catch (Exception ignored) {
++                // next
++            }
++        }
++    }
++}
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java
+index e4d1ab46..a5f6880a 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java
+@@ -34,6 +34,8 @@ public final class LauncherSettingsActivity extends Activity {
+     private final TextView[] dockChoices = new TextView[DOCK_OPACITIES.length];
+     private TextView wallpaperChoice;
+     private TextView animationsChoice;
++    private TextView videoChoice;
++    private TextView nightBrightnessChoice;
+     private TextView advancedChoice;
+     private TextView followThemeChoice;
+     private TextView openOnStartChoice;
+@@ -108,6 +110,27 @@ public final class LauncherSettingsActivity extends Activity {
+         }
+         wallpaperChoice = findViewById(R.id.wallpaperChoice);
+         wallpaperChoice.setOnClickListener(v -> showWallpaperPicker());
++        videoChoice = findViewById(R.id.videoChoice);
++        if (config.videoAvailable) {
++            videoChoice.setOnClickListener(v -> {
++                choices.edit().putBoolean(Config.VIDEO_CHOICE_KEY,
++                        !choices.getBoolean(Config.VIDEO_CHOICE_KEY, true)).apply();
++                changed();
++                refresh();
++            });
++        } else {
++            videoChoice.setVisibility(android.view.View.GONE);
++        }
++        nightBrightnessChoice = findViewById(R.id.nightBrightnessChoice);
++        android.content.Intent brightnessApp = getPackageManager().getLaunchIntentForPackage("io.github.maxhayim.brightness");
++        if (brightnessApp == null) brightnessApp = getPackageManager().getLeanbackLaunchIntentForPackage("io.github.maxhayim.brightness");
++        if (brightnessApp != null) {
++            final android.content.Intent open = brightnessApp;
++            nightBrightnessChoice.setText(R.string.night_brightness_row);
++            nightBrightnessChoice.setOnClickListener(v -> startActivity(open));
++        } else {
++            nightBrightnessChoice.setVisibility(android.view.View.GONE);
++        }
+         animationsChoice = findViewById(R.id.animationsChoice);
+         animationsChoice.setOnClickListener(v -> {
+             animations = !animations;
+@@ -286,6 +309,8 @@ public final class LauncherSettingsActivity extends Activity {
+         for (int i = 0; i < dockChoices.length; i++) {
+             dockChoices[i].setSelected(dockOpacity == DOCK_OPACITIES[i]);
+         }
++        videoChoice.setText(getString(R.string.video_state,
++                getString(choices.getBoolean(Config.VIDEO_CHOICE_KEY, true) ? R.string.on : R.string.off)));
+         animationsChoice.setText(getString(R.string.animations_state,
+                 getString(animations ? R.string.on : R.string.off)));
+         advancedChoice.setText(getString(R.string.advanced_effects_state,
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
+index 17961443..d346768c 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
+@@ -295,6 +295,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     /** Tile menu's "Add to dock": the app waiting for a dock place in edit-dock mode, or null. */
+     private String dockEditAppKey;
+     private AppLibraryDialog appLibrary;
++    private VideoBackdrop videoBackdrop;
++    private WeatherLine weatherLine;
++    private DownDrawer downDrawer;
+     private boolean appLibrarySelection;
+     private boolean libraryOkOpens;
+     private boolean libraryFocusPending;
+@@ -395,6 +398,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         homeAppKeys = RemoteKeys.parseAppKeys(cfg.appKeys);
+         appLibrarySelection = cfg.appLibrarySelection;
+         libraryOkOpens = cfg.libraryOkOpens;
++        AppLibraryDialog.hiddenFromLibrary = new HashSet<>(cfg.libraryHiddenApps);
++        if (!Double.isNaN(cfg.weatherLat) && !Double.isNaN(cfg.weatherLon)) {
++            weatherLine = new WeatherLine(findViewById(R.id.weatherLine), cfg.weatherLat, cfg.weatherLon, cfg.weatherIcon);
++        }
++        if (cfg.videoWallpaper) videoBackdrop = new VideoBackdrop(this, findViewById(R.id.root), cfg.videoRotationMinutes, cfg.videoDim, cfg.videoDimEvening, cfg.videoDimNight);
+         // restore_key_services: after a force stop, put back the remote's accessibility helpers that Android took
+         // off the list (needs WRITE_SECURE_SETTINGS, granted by build-and-install with RESTORE_KEY_SERVICES=1).
+         if (cfg.restoreKeyServices) ServiceRepair.restore(this);
+@@ -443,11 +451,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         // The glow is one bitmap, so its alpha can be applied while drawing it. Otherwise every frame of
+         // a fade renders it into a full-screen offscreen buffer first.
+         ambient.forceHasOverlappingRendering(false);
+-        ambientGlow = cfg.ambientGlow;
++        ambientGlow = cfg.ambientGlow && !cfg.videoWallpaper;   // the glow would wash out a background video
+         appGlow = cfg.appGlow;
+         if (!ambientGlow) ambient.setVisibility(View.GONE);
+         heroName = findViewById(R.id.heroName);
+         hero = findViewById(R.id.hero);
++        if (cfg.downDrawer) downDrawer = new DownDrawer(this, root, downHost);
+         // The hero is now a group (name, and the cinematic lines): without this every fade of the default
+         // shelf would render it through an offscreen buffer first, as the glow above notes.
+         hero.forceHasOverlappingRendering(false);
+@@ -737,6 +746,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+             libraryFromTopBar = true;   // closing it goes back to this button, not to the pill after the last row
+         });
+         btnLibraryTop.setVisibility(cfg.libraryButton && cfg.appLibrary ? View.VISIBLE : View.GONE);
++        if (cfg.downDrawer) quietTopBar();
+         addTopBarApps(cfg.topBarApps, cfg.launchActions);
+         iconOnlyButtons = cfg.iconOnlyButtons;
+         topMenu = cfg.topMenu;
+@@ -943,6 +953,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     @Override
+     protected void onResume() {
+         super.onResume();
++        if (videoBackdrop != null) videoBackdrop.start();
++        if (weatherLine != null) weatherLine.resume();
+         // A festival that started or ended while Home was in the background: rebuild with or without it.
+         if (festive != festival.active(LocalDate.now())) {
+             recreate();
+@@ -1154,6 +1166,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     @Override
+     protected void onPause() {
+         super.onPause();
++        if (videoBackdrop != null) videoBackdrop.stop();
++        if (weatherLine != null) weatherLine.pause();
++        if (downDrawer != null) downDrawer.close(false);
+         root.removeCallbacks(showIdleClock);
+         endReorder();   // Home or another app while reordering keeps the order so far
+         wallpaperPlayer.stop();
+@@ -1207,6 +1222,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     public void onWindowFocusChanged(boolean hasFocus) {
+         super.onWindowFocusChanged(hasFocus);
+         if (hasFocus) {
++            // Back from the screensaver or settings: the header may have settled after the glass was placed.
++            root.postDelayed(this::resnapGlass, 350);
+             startPendingSettingsReorder();
+             if (libraryFocusPending && appLibrary == null) focusLibrary();
+             showCardPrompt();
+@@ -1259,6 +1276,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+      */
+     @Override
+     public boolean dispatchKeyEvent(KeyEvent event) {
++        if (downDrawer != null && !reordering && downDrawer.onKey(event)) return true;
+         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window.
+         if (event.getKeyCode() >= 1000 && RemoteKeys.handle(this, event, homeAppKeys.get(event.getKeyCode()), null)) return true;
+         if (handleSettingsKey(event)) return true;
+@@ -1707,6 +1725,81 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         }
+     }
+ 
++    /**
++     * Local addition (with down_drawer): the library button leaves the top bar for the Down panel, and the bar sits
++     * in the corner, faint until focus reaches it, so Home stays clean.
++     */
++    private void quietTopBar() {
++        btnLibraryTop.setVisibility(View.GONE);
++        View top = findViewById(R.id.topButtons);
++        top.setAlpha(0.3f);
++        top.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
++            int[] loc = new int[2];
++            v.getLocationOnScreen(loc);
++            float baseX = loc[0] - v.getTranslationX(), baseY = loc[1] - v.getTranslationY();
++            int screenW = getResources().getDisplayMetrics().widthPixels;
++            v.setTranslationX(screenW - 22 * density - (baseX + v.getWidth()));
++            v.setTranslationY(18 * density - baseY);
++        });
++        top.getViewTreeObserver().addOnGlobalFocusChangeListener((oldF, newF) -> {
++            boolean in = false;
++            for (Object p = newF; p instanceof View; p = ((View) p).getParent()) {
++                if (p == top) { in = true; break; }
++            }
++            if (in == (top.getTag() == Boolean.TRUE)) return;
++            top.setTag(in);
++            top.animate().cancel();
++            top.animate().alpha(in ? 1f : 0.3f).setStartDelay(in ? 0 : 1500).setDuration(in ? 150 : 600).start();
++        });
++    }
++
++    /** Local addition: what the Down panel needs from Home. */
++    private final DownDrawer.Host downHost = new DownDrawer.Host() {
++        @Override public int dockFocusWithNothingBelow() {
++            int pos = focusedTilePosition();
++            boolean onlyDock = adapter.appCount() <= COLUMNS;
++            return pos >= 0 && pos < COLUMNS && onlyDock && openPopup == null && appLibrary == null ? pos : -1;
++        }
++        @Override public int dockCount() { return Math.min(COLUMNS, adapter.appCount()); }
++        @Override public String packageAt(int p) { return adapter.packageAt(p); }
++        @Override public String labelAt(int p) { return adapter.labelAt(p); }
++        @Override public android.graphics.drawable.Drawable artworkAt(int p) { return adapter.artworkAt(p); }
++        @Override public void launchAt(int p) { adapter.launchAt(p); }
++        @Override public void slideHome(float dy, boolean open) {
++            if (open) {
++                hideGlass();
++                // Never slide the dock over the clock and date: stop just under the header.
++                View header = findViewById(R.id.leftBlock);
++                View first = grid.getChildCount() > 0 ? grid.getChildAt(0) : null;
++                if (header != null && first != null) {
++                    int[] h = new int[2], d = new int[2];
++                    header.getLocationOnScreen(h);
++                    first.getLocationOnScreen(d);
++                    float room = d[1] - grid.getTranslationY() - (h[1] + header.getHeight()) - 20 * density;
++                    dy = Math.max(dy, -Math.max(0f, room));
++                }
++            }
++            grid.animate().translationY(dy).setDuration(220).start();
++            hero.animate().translationY(dy).alpha(open ? 0f : 1f).setDuration(220).start();
++        }
++        @Override public void openLibrary() { onLibraryRequested(); }
++        @Override public void focusDock(int p) {
++            RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(p);
++            View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
++            if (card != null) card.requestFocus();
++            root.postDelayed(MainActivity.this::resnapGlass, 260);
++        }
++    };
++
++    /** Local fix: puts the glass back on the focused tile wherever that tile now is, size or not. */
++    private void resnapGlass() {
++        if (isDestroyed() || adapter.appCount() == 0 || libraryFocusPending) return;
++        int pos = Math.max(0, Math.min(lastFocused, adapter.appCount() - 1));
++        RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(pos);
++        View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
++        if (card != null && card.getWidth() > 0 && card.isFocused()) onTileFocused(pos, card);
++    }
++
+     /** Refits the glass to the focused holder once the grid layout and tile dimensions settle. */
+     private void refitGlass() {
+         if (isDestroyed() || adapter.appCount() == 0 || libraryFocusPending) return;
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/VideoBackdrop.java b/launcher/app/src/main/java/com/gathin/tvhome/VideoBackdrop.java
+new file mode 100644
+index 00000000..371d4e48
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/VideoBackdrop.java
+@@ -0,0 +1,167 @@
++package com.gathin.tvhome;
++
++import android.content.Context;
++import android.graphics.SurfaceTexture;
++import android.media.MediaPlayer;
++import android.net.Uri;
++import android.os.SystemClock;
++import android.view.Surface;
++import android.view.TextureView;
++import android.view.View;
++import android.view.ViewGroup;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++
++/**
++ * Local experiment (theme key "video_wallpaper"): muted videos behind Home, from res/raw/bg_video_1, _2, ...
++ * Each clip loops until video_rotation_minutes have passed, then the next one (shuffled) starts. Only one
++ * player exists at a time, and only while Home is in front: stop() releases it so no decoder is held while an
++ * app runs. Between clips the last frame stays on screen until the next one is ready, so there is no flash.
++ */
++final class VideoBackdrop implements TextureView.SurfaceTextureListener {
++    private final Context ctx;
++    private final TextureView view;
++    private final List<Integer> clips = new ArrayList<>();
++    private final long rotationMs;
++    private int index;
++    private long clipStarted;
++    private MediaPlayer player;
++    private Surface surface;
++    private boolean wanted;
++    private final View shade;
++    private final int dayDim, eveningDim, nightDim;
++    private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
++    private final Runnable dimTick = new Runnable() {
++        @Override public void run() {
++            updateDim(true);
++            handler.postDelayed(this, 60_000L);
++        }
++    };
++
++    VideoBackdrop(Context ctx, ViewGroup root, int rotationMinutes, int dimPercent, int eveningDim, int nightDim) {
++        this.ctx = ctx;
++        this.rotationMs = Math.max(1, rotationMinutes) * 60_000L;
++        for (int i = 1; i <= 50; i++) {
++            int id = ctx.getResources().getIdentifier("bg_video_" + i, "raw", ctx.getPackageName());
++            if (id == 0) break;
++            clips.add(id);
++        }
++        Collections.shuffle(clips);
++        view = new TextureView(ctx);
++        view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
++        view.setSurfaceTextureListener(this);
++        root.addView(view, 0, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
++                ViewGroup.LayoutParams.MATCH_PARENT));
++        this.dayDim = dimPercent;
++        this.eveningDim = eveningDim;
++        this.nightDim = nightDim;
++        shade = new View(ctx);
++        shade.setBackgroundColor(android.graphics.Color.BLACK);
++        shade.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
++        root.addView(shade, 1, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
++                ViewGroup.LayoutParams.MATCH_PARENT));
++        updateDim(false);
++    }
++
++    /** Darkness over the videos at a minute of the day: day, easing to evening 20-21 h, to night 22-23 h, back 6-7 h. */
++    static float dimAt(int minute, int day, int evening, int night) {
++        int h = minute / 60;
++        float f = (minute % 60) / 60f;
++        if (h >= 23 || h < 6) return night;
++        if (h == 6) return night + (day - night) * f;
++        if (h < 20) return day;
++        if (h == 20) return day + (evening - day) * f;
++        if (h == 21) return evening;
++        return evening + (night - evening) * f;   // 22 h
++    }
++
++    private void updateDim(boolean animate) {
++        java.util.Calendar c = java.util.Calendar.getInstance();
++        float target = dimAt(c.get(java.util.Calendar.HOUR_OF_DAY) * 60 + c.get(java.util.Calendar.MINUTE),
++                dayDim, eveningDim, nightDim) / 100f;
++        if (animate) shade.animate().alpha(target).setDuration(3000).start();
++        else shade.setAlpha(target);
++    }
++
++    void start() {
++        wanted = true;
++        updateDim(false);
++        handler.removeCallbacks(dimTick);
++        handler.postDelayed(dimTick, 60_000L);
++        if (player == null && view.isAvailable()) open(view.getSurfaceTexture());
++    }
++
++    void stop() {
++        wanted = false;
++        handler.removeCallbacks(dimTick);
++        if (player != null) {
++            player.release();
++            player = null;
++        }
++        if (surface != null) {
++            surface.release();
++            surface = null;
++        }
++    }
++
++    private void open(SurfaceTexture texture) {
++        if (clips.isEmpty()) return;
++        try {
++            surface = new Surface(texture);
++            player = new MediaPlayer();
++            player.setSurface(surface);
++            player.setOnPreparedListener(mp -> {
++                mp.setVolume(0f, 0f);
++                mp.start();
++            });
++            player.setOnCompletionListener(mp -> {
++                if (SystemClock.elapsedRealtime() - clipStarted >= rotationMs && clips.size() > 1) {
++                    index = (index + 1) % clips.size();
++                    load();
++                } else {
++                    mp.seekTo(0);
++                    mp.start();
++                }
++            });
++            player.setOnErrorListener((mp, what, extra) -> { stop(); return true; });
++            if (clipStarted == 0 || SystemClock.elapsedRealtime() - clipStarted >= rotationMs) {
++                if (clipStarted != 0) index = (index + 1) % clips.size();
++                clipStarted = 0;
++            }
++            load();
++        } catch (Exception e) {
++            stop();
++        }
++    }
++
++    /** Points the player at the current clip; keeps clipStarted when resuming the same clip. */
++    private void load() {
++        try {
++            player.reset();
++            player.setSurface(surface);
++            player.setDataSource(ctx, Uri.parse("android.resource://" + ctx.getPackageName() + "/" + clips.get(index)));
++            if (clipStarted == 0 || SystemClock.elapsedRealtime() - clipStarted >= rotationMs) {
++                clipStarted = SystemClock.elapsedRealtime();
++            }
++            player.prepareAsync();
++        } catch (Exception e) {
++            stop();
++        }
++    }
++
++    @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int w, int h) {
++        if (wanted && player == null) open(texture);
++    }
++
++    @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
++        boolean keep = wanted;
++        stop();
++        wanted = keep;
++        return true;
++    }
++
++    @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int w, int h) { }
++    @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) { }
++}
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/WeatherLine.java b/launcher/app/src/main/java/com/gathin/tvhome/WeatherLine.java
+new file mode 100644
+index 00000000..91c3908d
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/WeatherLine.java
+@@ -0,0 +1,181 @@
++package com.gathin.tvhome;
++
++import android.os.Handler;
++import android.os.Looper;
++import android.os.SystemClock;
++import android.view.View;
++import android.widget.TextView;
++
++import org.json.JSONObject;
++
++import java.io.ByteArrayOutputStream;
++import java.io.InputStream;
++import java.net.HttpURLConnection;
++import java.net.URL;
++import java.util.Locale;
++import java.util.concurrent.ExecutorService;
++import java.util.concurrent.Executors;
++
++/**
++ * Local addition (theme keys weather_lat / weather_lon): the outdoor temperature as one quiet line under the date.
++ * Asks Open-Meteo (no key, no account) only while Home is in front, at most every 30 minutes; the coordinates are
++ * all that is sent. With no answer the line stays hidden.
++ */
++final class WeatherLine {
++    private static final long REFRESH_MS = 30 * 60_000L;
++    private static final ExecutorService NET = Executors.newSingleThreadExecutor();
++
++    private final TextView view;
++    private final double lat, lon;
++    private final boolean icon;
++    private final Handler handler = new Handler(Looper.getMainLooper());
++    /** Last answer, kept across Home being rebuilt (settings, theme, screensaver) so the line never pops in late. */
++    private static String lastText;
++    private static long fetchedAt;
++    /** The next hours, as "08 h", symbol, "16°", for the Down panel; empty until the first answer. */
++    private static volatile java.util.List<String[]> hourly = java.util.Collections.emptyList();
++
++    static java.util.List<String[]> hourly() {
++        return hourly;
++    }
++
++    /** The next days, as day name, symbol, "28°", "16°", "40%" (rain chance, "" when none). */
++    private static volatile java.util.List<String[]> daily = java.util.Collections.emptyList();
++
++    static java.util.List<String[]> daily() {
++        return daily;
++    }
++
++    private static String rain(org.json.JSONArray a, int k) {
++        if (a == null || a.isNull(k)) return "";
++        int p = a.optInt(k, 0);
++        return p >= 10 ? p + "%" : "";
++    }
++    private boolean resumed;
++    private final Runnable tick = new Runnable() {
++        @Override public void run() {
++            fetch();
++            handler.postDelayed(this, REFRESH_MS);
++        }
++    };
++
++    WeatherLine(TextView view, double lat, double lon, boolean icon) {
++        this.view = view;
++        this.lat = lat;
++        this.lon = lon;
++        this.icon = icon;
++        // Hold the line's space from the first layout: a line that appears later pushes the dock down under a
++        // focus highlight that was already placed.
++        if (lastText != null) {
++            view.setText(lastText);
++            view.setVisibility(View.VISIBLE);
++        } else {
++            view.setText(" ");
++            view.setVisibility(View.INVISIBLE);
++        }
++    }
++
++    void resume() {
++        resumed = true;
++        handler.removeCallbacks(tick);
++        long age = SystemClock.elapsedRealtime() - fetchedAt;
++        if (fetchedAt == 0 || age >= REFRESH_MS) {
++            handler.post(tick);
++        } else {
++            handler.postDelayed(tick, REFRESH_MS - age);
++        }
++    }
++
++    void pause() {
++        resumed = false;
++        handler.removeCallbacks(tick);
++    }
++
++    private void fetch() {
++        String url = String.format(Locale.US,
++                "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code,precipitation_probability&forecast_hours=8&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=7&timezone=auto",
++                lat, lon);
++        NET.execute(() -> {
++            String text = null;
++            HttpURLConnection c = null;
++            try {
++                c = (HttpURLConnection) new URL(url).openConnection();
++                c.setConnectTimeout(8000);
++                c.setReadTimeout(8000);
++                if (c.getResponseCode() == 200) {
++                    ByteArrayOutputStream out = new ByteArrayOutputStream();
++                    try (InputStream in = c.getInputStream()) {
++                        byte[] buf = new byte[4096];
++                        int n;
++                        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
++                    }
++                    JSONObject cur = new JSONObject(out.toString("UTF-8")).getJSONObject("current");
++                    long temp = Math.round(cur.getDouble("temperature_2m"));
++                    String sym = icon ? symbol(cur.optInt("weather_code", -1)) : "";
++                    text = (sym.isEmpty() ? "" : sym + "  ") + temp + "°";
++                    JSONObject h = new JSONObject(out.toString("UTF-8")).optJSONObject("hourly");
++                    if (h != null) {
++                        org.json.JSONArray times = h.getJSONArray("time");
++                        org.json.JSONArray temps = h.getJSONArray("temperature_2m");
++                        org.json.JSONArray codes = h.getJSONArray("weather_code");
++                        org.json.JSONArray rains = h.optJSONArray("precipitation_probability");
++                        java.util.List<String[]> next = new java.util.ArrayList<>();
++                        for (int k = 1; k < times.length() && next.size() < 6; k++) {   // 0 is the current hour
++                            String t = times.getString(k);   // 2026-10-27T08:00, local time
++                            String hour = t.length() >= 13 ? t.substring(11, 13) + " h" : t;
++                            next.add(new String[]{hour, symbol(codes.optInt(k, -1)), Math.round(temps.getDouble(k)) + "°", rain(rains, k)});
++                        }
++                        hourly = next;
++                    }
++                    JSONObject d = new JSONObject(out.toString("UTF-8")).optJSONObject("daily");
++                    if (d != null) {
++                        org.json.JSONArray days = d.getJSONArray("time");
++                        org.json.JSONArray hi = d.getJSONArray("temperature_2m_max");
++                        org.json.JSONArray lo = d.getJSONArray("temperature_2m_min");
++                        org.json.JSONArray dc = d.getJSONArray("weather_code");
++                        org.json.JSONArray dr = d.optJSONArray("precipitation_probability_max");
++                        java.util.List<String[]> next = new java.util.ArrayList<>();
++                        for (int k = 0; k < days.length(); k++) {
++                            String name;
++                            if (k == 0) {
++                                name = view.getContext().getString(R.string.forecast_today);
++                            } else {
++                                name = java.time.LocalDate.parse(days.getString(k)).getDayOfWeek()
++                                        .getDisplayName(java.time.format.TextStyle.SHORT, Locale.getDefault()).replace(".", "");
++                                name = name.substring(0, 1).toUpperCase(Locale.getDefault()) + name.substring(1);
++                            }
++                            next.add(new String[]{name, symbol(dc.optInt(k, -1)), Math.round(hi.getDouble(k)) + "°",
++                                    Math.round(lo.getDouble(k)) + "°", rain(dr, k)});
++                        }
++                        daily = next;
++                    }
++                }
++            } catch (Exception ignored) {
++                // Offline or a bad answer: keep whatever is shown, or nothing.
++            } finally {
++                if (c != null) c.disconnect();
++            }
++            final String shown = text;
++            handler.post(() -> {
++                if (shown == null) return;
++                fetchedAt = SystemClock.elapsedRealtime();
++                lastText = shown;
++                view.setText(shown);
++                view.setVisibility(View.VISIBLE);
++            });
++        });
++    }
++
++    /** WMO weather code to a small text symbol (monochrome where the font allows). */
++    static String symbol(int code) {
++        if (code < 0) return "";
++        if (code <= 1) return "☀︎";
++        if (code == 2) return "⛅︎";
++        if (code == 3) return "☁︎";
++        if (code == 45 || code == 48) return "≋";
++        if (code >= 71 && code <= 77 || code == 85 || code == 86) return "❄︎";
++        if (code >= 95) return "⚡︎";
++        if (code >= 51) return "☂︎";
++        return "";
++    }
++}
+diff --git a/launcher/app/src/main/res/drawable/banner_youtube.xml b/launcher/app/src/main/res/drawable/banner_youtube.xml
+new file mode 100644
+index 00000000..4513b57d
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/banner_youtube.xml
+@@ -0,0 +1,11 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: banner for a YouTube client tile (app_banners), the play button on near-black. -->
++<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
++    <item android:width="320dp" android:height="180dp">
++        <shape android:shape="rectangle">
++            <solid android:color="#FF0F0F0F" />
++        </shape>
++    </item>
++    <item android:width="112dp" android:height="80dp" android:gravity="center"
++        android:drawable="@drawable/ic_yt_play" />
++</layer-list>
+diff --git a/launcher/app/src/main/res/drawable/ic_yt_play.xml b/launcher/app/src/main/res/drawable/ic_yt_play.xml
+new file mode 100644
+index 00000000..65328c09
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_yt_play.xml
+@@ -0,0 +1,9 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: a red rounded play button for banner_youtube. -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="112dp" android:height="80dp"
++    android:viewportWidth="28" android:viewportHeight="20">
++    <path android:fillColor="#FFFF0033"
++        android:pathData="M27.4,3.1C27.1,1.9 26.1,0.9 24.9,0.6C22.7,0 14,0 14,0C14,0 5.3,0 3.1,0.6C1.9,0.9 0.9,1.9 0.6,3.1C0,5.3 0,10 0,10C0,10 0,14.7 0.6,16.9C0.9,18.1 1.9,19.1 3.1,19.4C5.3,20 14,20 14,20C14,20 22.7,20 24.9,19.4C26.1,19.1 27.1,18.1 27.4,16.9C28,14.7 28,10 28,10C28,10 28,5.3 27.4,3.1Z" />
++    <path android:fillColor="#FFFFFFFF" android:pathData="M11.2,14.3L18.4,10L11.2,5.7Z" />
++</vector>
+diff --git a/launcher/app/src/main/res/layout/activity_launcher_settings.xml b/launcher/app/src/main/res/layout/activity_launcher_settings.xml
+index b3de8647..09a15373 100644
+--- a/launcher/app/src/main/res/layout/activity_launcher_settings.xml
++++ b/launcher/app/src/main/res/layout/activity_launcher_settings.xml
+@@ -93,6 +93,16 @@
+             style="@style/SettingsRow"
+             android:layout_marginTop="28dp" />
+ 
++        <TextView
++            android:id="@+id/videoChoice"
++            style="@style/SettingsRow"
++            android:layout_marginTop="28dp" />
++
++        <TextView
++            android:id="@+id/nightBrightnessChoice"
++            style="@style/SettingsRow"
++            android:layout_marginTop="10dp" />
++
+         <TextView
+             android:id="@+id/animationsChoice"
+             style="@style/SettingsRow"
+diff --git a/launcher/app/src/main/res/layout/activity_main.xml b/launcher/app/src/main/res/layout/activity_main.xml
+index c037d247..d559849e 100644
+--- a/launcher/app/src/main/res/layout/activity_main.xml
++++ b/launcher/app/src/main/res/layout/activity_main.xml
+@@ -272,6 +272,21 @@
+                             android:letterSpacing="0.14"
+                             android:textAllCaps="true" />
+ 
++                        <!-- Local addition: outdoor temperature (theme weather_lat / weather_lon), hidden until known. -->
++                        <TextView
++                            android:id="@+id/weatherLine"
++                            android:gravity="left"
++                            android:layout_width="match_parent"
++                            android:layout_height="wrap_content"
++                            android:layout_marginTop="6dp"
++                            android:singleLine="true"
++                            android:textColor="#A6FFFFFF"
++                            android:textSize="14sp"
++                            android:fontFamily="@string/font_regular"
++                            android:letterSpacing="0.14"
++                            android:includeFontPadding="false"
++                            android:visibility="gone" />
++
+                         <!-- Lunar date ("Lunar 13/9 · Year of the Horse"), shown when lunar_date is on. -->
+                         <TextView
+                             android:id="@+id/lunarDate"
+diff --git a/launcher/app/src/main/res/values-es/strings.xml b/launcher/app/src/main/res/values-es/strings.xml
+index e3244921..1412341a 100644
+--- a/launcher/app/src/main/res/values-es/strings.xml
++++ b/launcher/app/src/main/res/values-es/strings.xml
+@@ -46,6 +46,8 @@
+     <string name="columns_label">Aplicaciones por fila</string>
+     <string name="dock_opacity_label">Opacidad de la barra del dock</string>
+     <string name="animations_state">Animaciones: %1$s</string>
++    <string name="video_state">Videos de fondo: %1$s</string>
++    <string name="night_brightness_row">Brillo nocturno…</string>
+     <string name="advanced_effects">Efectos avanzados</string>
+     <string name="advanced_effects_state">Efectos avanzados: %1$s</string>
+     <string name="open_on_start_label">Abrir al iniciar</string>
+@@ -144,4 +146,12 @@
+     <string name="race_countdown_hours">%1$dh %2$dm</string>
+     <string name="race_countdown_days">%1$dd %2$dh</string>
+     <string name="last_opened">Abierta por última vez %1$s</string>
++    <string name="down_drawer_title">Recientes</string>
++    <string name="down_drawer_search">🔍  Buscar</string>
++    <string name="down_drawer_all_apps">⊞  Todas las apps</string>
++    <string name="down_drawer_forecast">Próximas horas</string>
++    <string name="down_drawer_empty">Las apps que abras van a aparecer acá</string>
++    <string name="forecast_by_hour">Por hora  ▸</string>
++    <string name="forecast_by_day">Por día  ▸</string>
++    <string name="forecast_today">Hoy</string>
+ </resources>
+diff --git a/launcher/app/src/main/res/values/config.xml b/launcher/app/src/main/res/values/config.xml
+index c963338f..2e69a305 100644
+--- a/launcher/app/src/main/res/values/config.xml
++++ b/launcher/app/src/main/res/values/config.xml
+@@ -19,8 +19,10 @@
+     <string-array name="dock_apps">
+         <item>com.netflix.ninja</item>
+         <item>com.amazon.amazonvideo.livingroom</item>
+-        <item>com.google.android.youtube.tv</item>
+-        <item>in.startv.hotstar</item>
++        <item>com.spotify.tv.android</item>
++        <item>com.directv.dtvlatam</item>
++        <item>org.smarttube.stable</item>
++        <item>com.streamflixreborn.streamflix</item>
+     </string-array>
+     <!-- With fewer dock_apps than columns (or a dock app that is not installed), the free dock slots take
+          the first grid apps, so the dock never shows a gap. false leaves them empty (#162); a theme can
+@@ -360,7 +362,7 @@
+ 
+     <!-- Tiles per row in the grid; the dock always has this many slots. Tiles are 180dp wide at 4 columns and
+          shrink to fit from 5 up (about 144dp at 5, 117dp at 6 on a 1080p TV). -->
+-    <integer name="columns">4</integer>
++    <integer name="columns">6</integer>
+ 
+     <!-- Basic motion is on; advanced effects are opt-in in the launcher's own Settings screen. -->
+     <bool name="animations">true</bool>
+@@ -391,6 +393,10 @@
+     <string-array name="library_apps" translatable="false">
+     </string-array>
+ 
++    <!-- Apps the App library never lists, e.g. system apps nobody opens (a theme can set "library_hidden_apps"). Empty by default. -->
++    <string-array name="library_hidden_apps" translatable="false">
++    </string-array>
++
+     <!-- Module cards: an app that declares a card (docs/specs/card.md) can stand in for its tile with its own
+          label, caption and glow colour, once you answer Show on the prompt. false: never look for cards or ask. -->
+     <bool name="module_cards">true</bool>
+diff --git a/launcher/app/src/main/res/values/strings.xml b/launcher/app/src/main/res/values/strings.xml
+index ca006552..96c82dab 100644
+--- a/launcher/app/src/main/res/values/strings.xml
++++ b/launcher/app/src/main/res/values/strings.xml
+@@ -58,6 +58,8 @@
+     <string name="wallpaper_applied">Wallpaper changed</string>
+     <string name="wallpaper_theme_default">Theme default</string>
+     <string name="animations_state">Animations: %1$s</string>
++    <string name="video_state">Background videos: %1$s</string>
++    <string name="night_brightness_row">Night brightness…</string>
+     <string name="advanced_effects">Advanced effects</string>
+     <string name="advanced_effects_state">Advanced effects: %1$s</string>
+     <string name="open_on_start_label">Open on start</string>
+@@ -152,4 +154,12 @@
+     <!-- Cinematic top shelf (cinematic_home): the line under the focused dock app's name; %1$s is when it was
+          last opened, e.g. "5 minutes ago" or "yesterday, 9:40 pm". -->
+     <string name="last_opened">Last opened %1$s</string>
++    <string name="down_drawer_title">Recent</string>
++    <string name="down_drawer_search">🔍  Search</string>
++    <string name="down_drawer_all_apps">⊞  All apps</string>
++    <string name="down_drawer_forecast">Next hours</string>
++    <string name="down_drawer_empty">Apps you open will show here</string>
++    <string name="forecast_by_hour">By hour  ▸</string>
++    <string name="forecast_by_day">By day  ▸</string>
++    <string name="forecast_today">Today</string>
+ </resources>
+diff --git a/mi-launcher/LEEME.md b/mi-launcher/LEEME.md
+new file mode 100644
+index 00000000..c36e9854
+--- /dev/null
++++ b/mi-launcher/LEEME.md
+@@ -0,0 +1,79 @@
++# Mi Launcher TV
++
++Esta es mi versión de [CleanYourTV](https://github.com/Gathin23/cleanyourtv) (licencia MIT, créditos a su autor y
++colaboradores), con estos agregados:
++
++- **Videos de fondo** que rotan cada 5 minutos, más oscuros de noche, con opción Sí/No en Ajustes del launcher (⌂).
++  Son 6 videos gratuitos de [Mixkit](https://mixkit.co/) (licencia libre de Mixkit), dentro del launcher.
++- **Temperatura** debajo de la fecha (Open-Meteo, sin cuenta; solo se envían las coordenadas de la ciudad).
++- **Panel ↓**: al apretar abajo desde el dock aparece el pronóstico (por hora / por día), "Buscar" (búsqueda
++  universal de Google TV), "Todas las apps" y "Recientes" (apps usadas en los últimos 14 días y hace cuánto).
++- **Menú de arriba a la derecha** en la esquina, casi transparente hasta que pasás el control.
++- **Biblioteca sin apps del sistema** (`library_hidden_apps`), **logo de YouTube** para SmartTube, y el recuadro de
++  selección que vuelve a su lugar después del protector de pantalla.
++- **Brillo nocturno** (complemento `addons/brightness`): desde las 23 h baja de a poco en 45 minutos hasta 60 %,
++  y a las 6 h vuelve a la normalidad. Se prende y apaga desde ⌂ > "Brillo nocturno…".
++
++## Qué hay en el .zip
++
++| Carpeta | Qué es |
++|---|---|
++| `cleanyourtv/` | Todo el código (rama `mi-launcher`), con las herramientas para instalar. |
++| `cleanyourtv/mi-launcher/apk/launcher.apk` | El launcher ya compilado. |
++| `cleanyourtv/mi-launcher/apk/brightness.apk` | El complemento de brillo nocturno ya compilado. |
++| `cleanyourtv/mi-launcher/tema/config.json` | El tema: dock, videos, clima, panel ↓, apps ocultas. |
++| `cleanyourtv/mi-launcher/listas-noblex/` | Lo que desactivé en la Noblex. **Solo sirve para ese modelo.** |
++| `cleanyourtv/mi-launcher/instalar.sh` | Instalador para otra TV. |
++| `cleanyourtv/mi-launcher/cambios.patch` | Todos mis cambios sobre el proyecto original, en un archivo. |
++
++## Instalar en otra TV (Android TV / Google TV, Android 8 o más)
++
++1. **En la TV**: Ajustes > Preferencias del dispositivo > Información > apretá OK 7 veces sobre "Compilación".
++   Volvé atrás > Opciones de desarrollador > **Depuración USB** en Sí (y "Depuración por red/ADB" si aparece).
++2. **La IP de la TV**: Ajustes > Red e Internet > tu Wi-Fi > Dirección IP (por ejemplo 192.168.1.50).
++3. **En la PC** (Windows, con [Git para Windows](https://git-scm.com/) y [Python 3](https://www.python.org/)):
++   descomprimí el .zip, abrí **Git Bash** dentro de la carpeta `cleanyourtv` y ejecutá:
++
++   ```bash
++   mi-launcher/instalar.sh 192.168.1.50
++   ```
++
++   Cuando la TV pregunte "¿Permitir depuración USB?", marcá "Permitir siempre" y aceptá.
++   Para ver qué haría sin tocar nada: `DRY_RUN=1 mi-launcher/instalar.sh 192.168.1.50`.
++4. Al terminar, **apagá la Depuración USB** en la TV.
++
++El instalador hace una copia de seguridad en `backup/`, instala el launcher y lo pone como inicio (solo si arranca
++bien), aplica el tema, pone el protector Reloj, activa "inicio al encender", acelera las animaciones e instala el
++brillo nocturno. **No desactiva ni desinstala nada.**
++
++## Adaptarlo a otra casa
++
++Editá `mi-launcher/tema/config.json` y volvé a aplicar con `tools/theme.sh mi-launcher/tema`:
++
++- **Ciudad del clima**: `weather_lat` y `weather_lon` (buscalas en
++  `https://geocoding-api.open-meteo.com/v1/search?name=TU+CIUDAD&language=es`).
++- **Apps del dock**: `dock_apps`, con los nombres de paquete (los ves con
++  `tools/venv/Scripts/python tools/tv.py "pm list packages -3"`).
++- **Apps ocultas**: `hidden_apps` (inicio) y `library_hidden_apps` (biblioteca). Los de la Noblex no molestan en otra TV.
++- **Videos**: `video_wallpaper` (true/false), `video_rotation_minutes`, `video_dim`, `video_dim_evening`, `video_dim_night`.
++
++## Deshacer
++
++- Volver al launcher anterior: Ajustes > Apps > CleanYourTV > Desinstalar (o elegí el otro inicio cuando Android pregunte).
++- Brillo nocturno: Ajustes > Apps > Brightness > Desinstalar.
++- Animaciones: Opciones de desarrollador > las 3 "Escala de animación" en 1x.
++- En la Noblex, lo desactivado se reactiva con `tools/restore.sh mi-launcher/listas-noblex/<lista>.txt`.
++
++## Compilar desde el código
++
++Hace falta **Java 17 (JDK)** y el **Android SDK** (plataforma 34 y build-tools 34.0.0). En mi PC están en
++`C:\Users\Ale\Desktop\launcher\buildtools` (no van en el .zip). Con eso:
++
++```bash
++export JAVA_HOME=/c/ruta/al/jdk-17 ANDROID_HOME=/c/ruta/al/sdk
++cd launcher && ./gradlew assembleRelease        # -> launcher/app/build/outputs/apk/release/app-release.apk
++cd ../addons/brightness && ./gradlew assembleRelease
++```
++
++Si tu antivirus revisa las conexiones HTTPS (por ejemplo Avast) y Gradle falla con "PKIX path building failed",
++agregá `export JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStoreType=Windows-ROOT"` antes de compilar.
+diff --git a/mi-launcher/instalar.sh b/mi-launcher/instalar.sh
+new file mode 100644
+index 00000000..336239aa
+--- /dev/null
++++ b/mi-launcher/instalar.sh
+@@ -0,0 +1,106 @@
++#!/usr/bin/env bash
++# Instala "Mi Launcher TV" (CleanYourTV con los cambios de esta rama) en otra TV Android.
++#
++# Uso, en Git Bash y desde la carpeta del repo:
++#   mi-launcher/instalar.sh <ip de la TV> [carpeta con los APK]
++#   DRY_RUN=1 mi-launcher/instalar.sh 192.168.1.50      # muestra lo que haría, sin tocar la TV
++#
++# No desactiva ni desinstala nada en la TV. Todo se deshace (ver mi-launcher/LEEME.md).
++set -euo pipefail
++cd "$(dirname "$0")/.."
++TV_HOST="${1:?Uso: mi-launcher/instalar.sh <ip de la TV> [carpeta con los APK]}"
++APKS="${2:-mi-launcher/apk}"
++export TV_HOST MSYS_NO_PATHCONV=1
++DRY="${DRY_RUN:-0}"
++HOME_PKG=com.gathin.tvhome
++BRIGHT_PKG=io.github.maxhayim.brightness
++
++PY=tools/venv/bin/python
++[ -x "$PY" ] || PY=tools/venv/Scripts/python.exe
++if [ ! -x "$PY" ] && [ "$DRY" != 1 ]; then
++  echo "== Preparando las herramientas (solo la primera vez)"
++  python -m venv tools/venv 2>/dev/null || python3 -m venv tools/venv
++  PY=tools/venv/bin/python; [ -x "$PY" ] || PY=tools/venv/Scripts/python.exe
++  "$PY" -m pip install -q -r tools/requirements.txt
++fi
++
++tv() {
++  if [ "$DRY" = 1 ]; then echo "  [tv] $*"; return 0; fi
++  "$PY" -I tools/tv.py "$@"
++}
++push() {
++  if [ "$DRY" = 1 ]; then echo "  [push] $1 -> $2"; return 0; fi
++  "$PY" -I tools/b64push.py "$1" "$2"
++}
++
++[ -f "$APKS/launcher.apk" ] || { echo "Falta $APKS/launcher.apk (viene en el .zip, o compilalo: ver LEEME.md)" >&2; exit 1; }
++
++echo "== 1/8 Conectando con $TV_HOST. Si la TV pregunta \"¿Permitir depuración USB?\", aceptá."
++tv --probe
++SDK=$(tv 'getprop ro.build.version.sdk' | tr -dc '0-9' || true)
++if [ "$DRY" != 1 ] && [ -n "$SDK" ] && [ "$SDK" -lt 26 ]; then
++  echo "Esta TV tiene Android con SDK $SDK; el launcher necesita 26 (Android 8) o más. No se cambió nada." >&2; exit 1
++fi
++
++echo "== 2/8 Copia de seguridad del estado actual"
++B="backup/$(printf '%s' "$TV_HOST" | tr -c 'A-Za-z0-9._-' '_')-$(date +%Y%m%d-%H%M)"
++if [ "$DRY" != 1 ]; then
++  mkdir -p "$B"
++  tv 'pm list packages -f' > "$B/packages.txt"
++  tv 'pm list packages -d' > "$B/disabled.txt"
++  tv 'cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME' > "$B/home-before.txt"
++  for ns in global secure system; do tv "settings list $ns" > "$B/settings-$ns.txt"; done
++  echo "   guardada en $B"
++fi
++
++echo "== 3/8 Instalando el launcher"
++push "$APKS/launcher.apk" /data/local/tmp/tvhome.apk
++OUT=$(tv 'pm install -r /data/local/tmp/tvhome.apk; rm -f /data/local/tmp/tvhome.apk')
++echo "$OUT"
++case "$OUT" in *Success*|*"[tv]"*) ;; *) echo "ERROR: la instalación falló; no se cambió el inicio." >&2; exit 1 ;; esac
++
++echo "== 4/8 Probando que el launcher abra, y dejándolo como inicio"
++START=$(tv "am force-stop $HOME_PKG; am start -W -a android.intent.action.MAIN -c android.intent.category.HOME -n $HOME_PKG/.MainActivity")
++echo "$START"
++if [ "$DRY" != 1 ] && ! printf '%s' "$START" | grep -qF 'Status: ok'; then
++  echo "ERROR: el launcher no arrancó; el inicio de la TV quedó como estaba." >&2; exit 1
++fi
++tv "cmd package set-home-activity --user 0 $HOME_PKG/.MainActivity"
++NOW=$(tv 'cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME' | tail -n 1 | tr -d '\r')
++case "$NOW" in
++  $HOME_PKG/*|*"[tv]"*) echo "   el inicio ahora es $NOW" ;;
++  *) echo "AVISO: el inicio sigue siendo '$NOW'. Apretá Inicio en el control y elegí \"CleanYourTV\" como predeterminado." ;;
++esac
++
++echo "== 5/8 Aplicando el tema (video de fondo, dock, clima, panel ↓)"
++if [ "$DRY" = 1 ]; then echo "  [theme] mi-launcher/tema"; else tools/theme.sh mi-launcher/tema; fi
++
++echo "== 6/8 Protector de pantalla Reloj, inicio al encender y animaciones más rápidas"
++tv "settings put secure screensaver_components $HOME_PKG/.ClockDream"
++tv 'settings put global window_animation_scale 0.5; settings put global transition_animation_scale 0.5; settings put global animator_duration_scale 0.5'
++SVC=$HOME_PKG/.HomeKeyService
++tv "cmd appops set $HOME_PKG AUTO_START allow 2>/dev/null; cmd appops set $HOME_PKG APP_AUTO_START allow 2>/dev/null; appops write-settings 2>/dev/null; s=\$(settings get secure enabled_accessibility_services); case \"\$s\" in *HomeKeyService*) settings put secure enabled_accessibility_services ''; settings put secure accessibility_enabled 0; sleep 1; settings put secure enabled_accessibility_services \"\$s\" ;; null|'') settings put secure enabled_accessibility_services $SVC ;; *) settings put secure enabled_accessibility_services \"\$s:$SVC\" ;; esac; settings put secure accessibility_enabled 1; echo ayudante-activado"
++
++echo "== 7/8 Brillo nocturno (complemento Brightness)"
++if [ -f "$APKS/brightness.apk" ]; then
++  push "$APKS/brightness.apk" /data/local/tmp/brightness.apk
++  OUT=$(tv 'pm install -r /data/local/tmp/brightness.apk; rm -f /data/local/tmp/brightness.apk')
++  echo "$OUT"
++  tv "appops set $BRIGHT_PKG SYSTEM_ALERT_WINDOW allow; cmd appops set $BRIGHT_PKG APP_AUTO_START allow 2>/dev/null; am start -n $BRIGHT_PKG/.MainActivity >/dev/null; echo brillo-instalado"
++else
++  echo "   (no está $APKS/brightness.apk; se saltea)"
++fi
++
++echo "== 8/8 Listo"
++tv 'input keyevent HOME'
++cat <<'EOF'
++
++Hecho. Revisá en la TV:
++  - Apretá ↓ desde el dock: aparece el panel con pronóstico, Buscar, Todas las apps y Recientes.
++  - El clima es de Villa Ángela: para otra ciudad, cambiá weather_lat/weather_lon en mi-launcher/tema/config.json
++    y volvé a correr:  tools/theme.sh mi-launcher/tema
++  - Las apps del dock salen de "dock_apps" en ese mismo archivo (si una no está instalada, se saltea).
++
++Opcional (no se hizo): las listas de mi-launcher/listas-noblex/ son SOLO para la Noblex. En otra marca, no las uses
++sin revisarlas. Cuando termines, apagá la "Depuración USB" en la TV.
++EOF
+diff --git a/mi-launcher/listas-noblex/old-launchers.txt b/mi-launcher/listas-noblex/old-launchers.txt
+new file mode 100644
+index 00000000..0f8b3ac6
+--- /dev/null
++++ b/mi-launcher/listas-noblex/old-launchers.txt
+@@ -0,0 +1,3 @@
++# FreeMyTV and Flauncher: replaced by com.gathin.tvhome (owner asked, 2026-10-27)
++io.freemytv
++me.efesser.flauncher
+diff --git a/mi-launcher/listas-noblex/system-extras.txt b/mi-launcher/listas-noblex/system-extras.txt
+new file mode 100644
+index 00000000..47fe6821
+--- /dev/null
++++ b/mi-launcher/listas-noblex/system-extras.txt
+@@ -0,0 +1,9 @@
++# Noblex (Skyworth shinjuku) Android 11: system extras the owner doesn't use (2026-10-27).
++# Undo: tools/restore.sh work/system-extras.txt
++com.smartdevice.common.demonow
++fusion.android.tv.demo
++com.Smartdevice.emanual
++com.mstar.android.tv.disclaimercustomization
++com.android.deskclock
++com.google.android.videos
++com.overdevs.at4k
+diff --git a/mi-launcher/tema/config.json b/mi-launcher/tema/config.json
+new file mode 100644
+index 00000000..93c59cbf
+--- /dev/null
++++ b/mi-launcher/tema/config.json
+@@ -0,0 +1,92 @@
++{
++  "dock_apps": [
++    "com.netflix.ninja",
++    "com.amazon.amazonvideo.livingroom",
++    "com.spotify.tv.android",
++    "com.directv.dtvlatam",
++    "org.smarttube.stable",
++    "com.streamflixreborn.streamflix"
++  ],
++  "hidden_apps": [
++    "com.Smartdevice.emanual",
++    "com.airoha.ble.ota",
++    "com.android.deskclock",
++    "com.android.documentsui",
++    "com.android.vending",
++    "com.delta.airplayreceiver",
++    "com.esaba.downloader",
++    "com.google.android.exoplayer2.mundoinfinito",
++    "com.google.android.videos",
++    "com.mediatek.tv.service",
++    "com.mediatek.wwtv.mediaplayer",
++    "com.mediatek.wwtv.tvcenter",
++    "com.mstar.android.tv.disclaimercustomization",
++    "com.overdevs.at4k",
++    "com.smartdevice.common.demonow",
++    "flar2.homebutton",
++    "io.freemytv",
++    "me.efesser.flauncher",
++    "mediatek.factorymenu.ui",
++    "mtktvapi.agent",
++    "io.github.maxhayim.brightness"
++  ],
++  "fill_dock": false,
++  "columns": 6,
++  "rows_below_dock": 0,
++  "background_color": "#0A1628",
++  "wallpaper": false,
++  "sky_intensity": 0,
++  "ambient_glow": true,
++  "app_glow": true,
++  "dock_glass": true,
++  "dock_even_padding": true,
++  "icon_only_buttons": true,
++  "icon_only_inputs": true,
++  "fade_rows": false,
++  "wallpaper_true_color": false,
++  "cinematic_home": false,
++  "dock_title": true,
++  "focus_overshoot": false,
++  "clock_wallpaper": false,
++  "app_library": true,
++  "library_button": true,
++  "launcher_settings_button": true,
++  "power_on_home_always": true,
++  "key_filter": false,
++  "show_library_pill": false,
++  "library_hidden_apps": [
++    "com.android.documentsui",
++    "com.mediatek.wwtv.mediaplayer",
++    "com.mediatek.wwtv.tvcenter",
++    "com.mediatek.tv.service",
++    "mtktvapi.agent",
++    "mediatek.factorymenu.ui",
++    "com.airoha.ble.ota",
++    "com.mstar.android.tv.disclaimercustomization",
++    "com.Smartdevice.emanual",
++    "com.smartdevice.common.demonow",
++    "com.android.deskclock",
++    "com.google.android.videos",
++    "com.overdevs.at4k",
++    "io.freemytv",
++    "me.efesser.flauncher",
++    "com.coocaa.factory",
++    "com.mediatek.testpq"
++  ],
++  "video_wallpaper": true,
++  "dock_opacity": 50,
++  "video_rotation_minutes": 5,
++  "video_dim": 25,
++  "video_dim_evening": 30,
++  "video_dim_night": 35,
++  "weather_lat": -27.5768,
++  "weather_lon": -60.7111,
++  "weather_icon": true,
++  "app_banners": [
++    "org.smarttube.stable=banner_youtube"
++  ],
++  "app_labels": [
++    "org.smarttube.stable=YouTube"
++  ],
++  "down_drawer": true
++}
+\ No newline at end of file
