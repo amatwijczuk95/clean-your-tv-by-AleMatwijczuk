@@ -55,8 +55,6 @@
   "key_filter": false,
   "show_library_pill": false,
   "library_hidden_apps": [
-    "com.android.documentsui",
-    "com.mediatek.wwtv.mediaplayer",
     "com.mediatek.wwtv.tvcenter",
     "com.mediatek.tv.service",
     "mtktvapi.agent",

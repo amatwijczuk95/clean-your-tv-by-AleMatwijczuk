@@ -162,4 +162,5 @@
     <string name="forecast_by_hour">By hour  ▸</string>
     <string name="forecast_by_day">By day  ▸</string>
     <string name="forecast_today">Today</string>
+    <string name="down_drawer_usb">💾  USB</string>
 </resources>

@@ -251,6 +251,17 @@ final class DownDrawer {
         fillForecast();
         row.removeAllViews();
         row.addView(pill(activity.getString(R.string.down_drawer_search), v -> openSearch()));
+        Intent usb = usbIntent();
+        if (usb != null) {
+            row.addView(pill(activity.getString(R.string.down_drawer_usb), v -> {
+                close(false);
+                try {
+                    activity.startActivity(usb);
+                } catch (Exception ignored) {
+                    // the player went away meanwhile
+                }
+            }));
+        }
         row.addView(pill(activity.getString(R.string.down_drawer_all_apps), v -> {
             close(false);
             host.openLibrary();
@@ -403,6 +414,35 @@ final class DownDrawer {
             host.launchAt(pos);
         });
         return col;
+    }
+
+    /** A way to open a plugged-in USB drive, or null when none is mounted: the TV's media player, else Files. */
+    private Intent usbIntent() {
+        android.os.storage.StorageManager sm = activity.getSystemService(android.os.storage.StorageManager.class);
+        boolean mounted = false;
+        if (sm != null) {
+            for (android.os.storage.StorageVolume v : sm.getStorageVolumes()) {
+                if ((v.isRemovable() || !v.isPrimary()) && android.os.Environment.MEDIA_MOUNTED.equals(v.getState())) mounted = true;
+            }
+        }
+        if (!mounted) {
+            // Some MediaTek builds mount USB drives as public volumes that StorageManager does not list to apps.
+            java.io.File[] roots = new java.io.File("/storage").listFiles();
+            if (roots != null) {
+                for (java.io.File f : roots) {
+                    String n = f.getName();
+                    if (!n.equals("emulated") && !n.equals("self") && f.isDirectory()) mounted = true;
+                }
+            }
+        }
+        if (!mounted) return null;
+        android.content.pm.PackageManager pm = activity.getPackageManager();
+        for (String pkg : new String[]{"com.mediatek.wwtv.mediaplayer", "com.android.documentsui"}) {
+            Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
+            if (i == null) i = pm.getLaunchIntentForPackage(pkg);
+            if (i != null) return i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        }
+        return null;
     }
 
     private void openSearch() {
