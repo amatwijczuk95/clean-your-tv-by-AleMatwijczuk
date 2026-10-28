@@ -208,10 +208,10 @@ index 5d4b78fb..c429585d 100644
      /**
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java b/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java
 new file mode 100644
-index 00000000..70e16ec1
+index 00000000..d8be5b10
 --- /dev/null
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java
-@@ -0,0 +1,423 @@
+@@ -0,0 +1,463 @@
 +package com.gathin.tvhome;
 +
 +import android.app.Activity;
@@ -465,6 +465,17 @@ index 00000000..70e16ec1
 +        fillForecast();
 +        row.removeAllViews();
 +        row.addView(pill(activity.getString(R.string.down_drawer_search), v -> openSearch()));
++        Intent usb = usbIntent();
++        if (usb != null) {
++            row.addView(pill(activity.getString(R.string.down_drawer_usb), v -> {
++                close(false);
++                try {
++                    activity.startActivity(usb);
++                } catch (Exception ignored) {
++                    // the player went away meanwhile
++                }
++            }));
++        }
 +        row.addView(pill(activity.getString(R.string.down_drawer_all_apps), v -> {
 +            close(false);
 +            host.openLibrary();
@@ -617,6 +628,35 @@ index 00000000..70e16ec1
 +            host.launchAt(pos);
 +        });
 +        return col;
++    }
++
++    /** A way to open a plugged-in USB drive, or null when none is mounted: the TV's media player, else Files. */
++    private Intent usbIntent() {
++        android.os.storage.StorageManager sm = activity.getSystemService(android.os.storage.StorageManager.class);
++        boolean mounted = false;
++        if (sm != null) {
++            for (android.os.storage.StorageVolume v : sm.getStorageVolumes()) {
++                if ((v.isRemovable() || !v.isPrimary()) && android.os.Environment.MEDIA_MOUNTED.equals(v.getState())) mounted = true;
++            }
++        }
++        if (!mounted) {
++            // Some MediaTek builds mount USB drives as public volumes that StorageManager does not list to apps.
++            java.io.File[] roots = new java.io.File("/storage").listFiles();
++            if (roots != null) {
++                for (java.io.File f : roots) {
++                    String n = f.getName();
++                    if (!n.equals("emulated") && !n.equals("self") && f.isDirectory()) mounted = true;
++                }
++            }
++        }
++        if (!mounted) return null;
++        android.content.pm.PackageManager pm = activity.getPackageManager();
++        for (String pkg : new String[]{"com.mediatek.wwtv.mediaplayer", "com.android.documentsui"}) {
++            Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
++            if (i == null) i = pm.getLaunchIntentForPackage(pkg);
++            if (i != null) return i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++        }
++        return null;
 +    }
 +
 +    private void openSearch() {
@@ -1291,7 +1331,7 @@ index c037d247..d559849e 100644
                          <TextView
                              android:id="@+id/lunarDate"
 diff --git a/launcher/app/src/main/res/values-es/strings.xml b/launcher/app/src/main/res/values-es/strings.xml
-index e3244921..1412341a 100644
+index e3244921..1dcce341 100644
 --- a/launcher/app/src/main/res/values-es/strings.xml
 +++ b/launcher/app/src/main/res/values-es/strings.xml
 @@ -46,6 +46,8 @@
@@ -1303,7 +1343,7 @@ index e3244921..1412341a 100644
      <string name="advanced_effects">Efectos avanzados</string>
      <string name="advanced_effects_state">Efectos avanzados: %1$s</string>
      <string name="open_on_start_label">Abrir al iniciar</string>
-@@ -144,4 +146,12 @@
+@@ -144,4 +146,13 @@
      <string name="race_countdown_hours">%1$dh %2$dm</string>
      <string name="race_countdown_days">%1$dd %2$dh</string>
      <string name="last_opened">Abierta por última vez %1$s</string>
@@ -1315,6 +1355,7 @@ index e3244921..1412341a 100644
 +    <string name="forecast_by_hour">Por hora  ▸</string>
 +    <string name="forecast_by_day">Por día  ▸</string>
 +    <string name="forecast_today">Hoy</string>
++    <string name="down_drawer_usb">💾  USB</string>
  </resources>
 diff --git a/launcher/app/src/main/res/values/config.xml b/launcher/app/src/main/res/values/config.xml
 index c963338f..2e69a305 100644
@@ -1354,7 +1395,7 @@ index c963338f..2e69a305 100644
           label, caption and glow colour, once you answer Show on the prompt. false: never look for cards or ask. -->
      <bool name="module_cards">true</bool>
 diff --git a/launcher/app/src/main/res/values/strings.xml b/launcher/app/src/main/res/values/strings.xml
-index ca006552..96c82dab 100644
+index ca006552..de652c3e 100644
 --- a/launcher/app/src/main/res/values/strings.xml
 +++ b/launcher/app/src/main/res/values/strings.xml
 @@ -58,6 +58,8 @@
@@ -1366,7 +1407,7 @@ index ca006552..96c82dab 100644
      <string name="advanced_effects">Advanced effects</string>
      <string name="advanced_effects_state">Advanced effects: %1$s</string>
      <string name="open_on_start_label">Open on start</string>
-@@ -152,4 +154,12 @@
+@@ -152,4 +154,13 @@
      <!-- Cinematic top shelf (cinematic_home): the line under the focused dock app's name; %1$s is when it was
           last opened, e.g. "5 minutes ago" or "yesterday, 9:40 pm". -->
      <string name="last_opened">Last opened %1$s</string>
@@ -1378,16 +1419,17 @@ index ca006552..96c82dab 100644
 +    <string name="forecast_by_hour">By hour  ▸</string>
 +    <string name="forecast_by_day">By day  ▸</string>
 +    <string name="forecast_today">Today</string>
++    <string name="down_drawer_usb">💾  USB</string>
  </resources>
 diff --git a/mi-launcher/LEEME.md b/mi-launcher/LEEME.md
 new file mode 100644
-index 00000000..c36e9854
+index 00000000..9cd4f763
 --- /dev/null
 +++ b/mi-launcher/LEEME.md
 @@ -0,0 +1,79 @@
-+# Mi Launcher TV
++# Clean Your TV by AleMatwijczuk
 +
-+Esta es mi versión de [CleanYourTV](https://github.com/Gathin23/cleanyourtv) (licencia MIT, créditos a su autor y
++Esta es mi versión (de AleMatwijczuk) de [CleanYourTV](https://github.com/Gathin23/cleanyourtv) (licencia MIT, créditos a su autor y
 +colaboradores), con estos agregados:
 +
 +- **Videos de fondo** que rotan cada 5 minutos, más oscuros de noche, con opción Sí/No en Ajustes del launcher (⌂).
@@ -1466,12 +1508,12 @@ index 00000000..c36e9854
 +agregá `export JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStoreType=Windows-ROOT"` antes de compilar.
 diff --git a/mi-launcher/instalar.sh b/mi-launcher/instalar.sh
 new file mode 100644
-index 00000000..336239aa
+index 00000000..f23381cf
 --- /dev/null
 +++ b/mi-launcher/instalar.sh
 @@ -0,0 +1,106 @@
 +#!/usr/bin/env bash
-+# Instala "Mi Launcher TV" (CleanYourTV con los cambios de esta rama) en otra TV Android.
++# Instala "Clean Your TV by AleMatwijczuk" (CleanYourTV con los cambios de esta rama) en otra TV Android.
 +#
 +# Uso, en Git Bash y desde la carpeta del repo:
 +#   mi-launcher/instalar.sh <ip de la TV> [carpeta con los APK]
@@ -1602,10 +1644,10 @@ index 00000000..47fe6821
 +com.overdevs.at4k
 diff --git a/mi-launcher/tema/config.json b/mi-launcher/tema/config.json
 new file mode 100644
-index 00000000..93c59cbf
+index 00000000..9a6a8b2a
 --- /dev/null
 +++ b/mi-launcher/tema/config.json
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,90 @@
 +{
 +  "dock_apps": [
 +    "com.netflix.ninja",
@@ -1663,8 +1705,6 @@ index 00000000..93c59cbf
 +  "key_filter": false,
 +  "show_library_pill": false,
 +  "library_hidden_apps": [
-+    "com.android.documentsui",
-+    "com.mediatek.wwtv.mediaplayer",
 +    "com.mediatek.wwtv.tvcenter",
 +    "com.mediatek.tv.service",
 +    "mtktvapi.agent",
