@@ -74,10 +74,35 @@ index 701b5feb..b5f9a75b 100644
      <!-- Needed since Android 10 to read the Wi-Fi network name for the network pill. Never requested at
           runtime: build-and-install grants it with pm grant, so lint's Android 12 "ask for COARSE with
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java b/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java
-index 41825a1a..ce950eed 100644
+index 41825a1a..352c447d 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java
-@@ -521,6 +521,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+@@ -198,6 +198,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+     private final Set<String> hidden;
+     /** Apps pre-seeded into the App library's "added" set (config.xml library_apps); empty by default. */
+     private final Set<String> libraryPreload;
++    private final boolean dockOnly;
+     private final boolean animations;
+     private final boolean advancedEffects;
+     private final boolean showLibrary;
+@@ -228,6 +229,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+         this.fillDock = cfg.fillDock;
+         this.hidden = new HashSet<>(cfg.hiddenApps);
+         this.libraryPreload = new HashSet<>(cfg.libraryApps);
++        this.dockOnly = cfg.dockOnly;
+         this.animations = cfg.animations;
+         this.advancedEffects = cfg.animations && cfg.advancedEffects;
+         this.showHomeSettings = cfg.showHomeSettingsShortcut;
+@@ -338,6 +340,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+             fresh.add(docked + i, new Entry(Entry.EMPTY, "", new ComponentName(ctx, "empty-dock-slot-" + i),
+                     null, null, null, 0));
+         }
++        // Local: with dock_only, Home is the dock alone; every other app lives in the App library.
++        while (dockOnly && !reordering && fresh.size() > dockSize) fresh.remove(fresh.size() - 1);
+         items.clear();
+         items.addAll(fresh);
+         notifyDataSetChanged();
+@@ -521,6 +525,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
          });
      }
  
@@ -89,7 +114,7 @@ index 41825a1a..ce950eed 100644
      /** Opens the tile's activity by explicit component, with no extras: a card can name nothing else. */
      private void launch(Entry e) {
          if (e.kind == Entry.HOME_SETTINGS) {
-@@ -543,7 +548,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+@@ -543,7 +552,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
          }
          try {
              ctx.startActivity(i);
@@ -130,10 +155,10 @@ index e62db463..b3478b10 100644
              }
              Map<String, String> names = new HashMap<>();
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/Config.java b/launcher/app/src/main/java/com/gathin/tvhome/Config.java
-index 5d4b78fb..c429585d 100644
+index 5d4b78fb..a548ec41 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/Config.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/Config.java
-@@ -62,6 +62,24 @@ final class Config {
+@@ -62,6 +62,26 @@ final class Config {
      final List<String> hiddenApps;
      /** Packages pre-seeded into the App library's "added" set (config.xml, library_apps); empty by default. */
      final List<String> libraryApps;
@@ -155,10 +180,12 @@ index 5d4b78fb..c429585d 100644
 +    boolean weatherIcon = true;
 +    /** Local addition: the Down panel under the dock (theme "down_drawer"). */
 +    boolean downDrawer;
++    /** Local addition: Home shows the dock only (theme "dock_only"). */
++    boolean dockOnly;
      final String liveTvPackage;
      final String liveTvAction;
      final String liveTvInputId;
-@@ -406,6 +424,7 @@ final class Config {
+@@ -406,6 +426,7 @@ final class Config {
          boolean fillDock = res.getBoolean(R.bool.fill_dock);
          List<String> hidden = new ArrayList<>(Arrays.asList(res.getStringArray(R.array.hidden_apps)));
          List<String> libraryApps = new ArrayList<>(Arrays.asList(res.getStringArray(R.array.library_apps)));
@@ -166,7 +193,7 @@ index 5d4b78fb..c429585d 100644
          String liveTv = res.getString(R.string.live_tv_package).trim();
          String liveTvAction = res.getString(R.string.live_tv_action).trim();
          String liveTvInputId = res.getString(R.string.live_tv_input_id).trim();
-@@ -511,6 +530,7 @@ final class Config {
+@@ -511,6 +532,7 @@ final class Config {
              fillDock = bool(json, "fill_dock", fillDock);
              hidden = stringList(json, "hidden_apps", hidden);
              libraryApps = stringList(json, "library_apps", libraryApps);
@@ -174,7 +201,7 @@ index 5d4b78fb..c429585d 100644
              liveTv = string(json, "live_tv_package", liveTv);
              liveTvAction = string(json, "live_tv_action", liveTvAction);
              liveTvInputId = string(json, "live_tv_input_id", liveTvInputId);
-@@ -652,7 +672,7 @@ final class Config {
+@@ -652,7 +674,7 @@ final class Config {
          Festival festival = json == null ? Festival.NONE : Festival.parse(string(json, "festival", ""),
                  string(json, "festival_until", ""), string(json, "greeting", ""), string(json, "accent_color", ""));
  
@@ -183,7 +210,7 @@ index 5d4b78fb..c429585d 100644
                  packageMap(appBanners), panelService, panelAction, panelExtra, coocaaSources, inputAction, inputSources, inputUriScheme, Math.max(1, columns),
                  Math.max(0, rowsBelow), animations, advancedEffects, shamsi, greetingName, moduleCards, reducedMotion, bootToLiveTv,
                  openOnStartChoice, dockTitle, dockRow, topMenu, launcherSettingsButton, reorderButton, showNetworkPill, showInputsPill,
-@@ -666,6 +686,22 @@ final class Config {
+@@ -666,6 +688,23 @@ final class Config {
                  consumeVolumeKeys, powerOnHome, homeLongPressHome, wifiStatusWarnings, topBarApps, showGreeting, headerWhite, clockWallpaper,
                  Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
                  dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly);
@@ -200,6 +227,7 @@ index 5d4b78fb..c429585d 100644
 +            }
 +            config.weatherIcon = bool(json, "weather_icon", true);
 +            config.downDrawer = bool(json, "down_drawer", false);
++            config.dockOnly = bool(json, "dock_only", false);
 +        }
 +        if (json != null) config.videoRotationMinutes = integer(json, "video_rotation_minutes", 5, 1, 240);
 +        return config;
@@ -1644,10 +1672,10 @@ index 00000000..47fe6821
 +com.overdevs.at4k
 diff --git a/mi-launcher/tema/config.json b/mi-launcher/tema/config.json
 new file mode 100644
-index 00000000..9a6a8b2a
+index 00000000..593e3e38
 --- /dev/null
 +++ b/mi-launcher/tema/config.json
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,93 @@
 +{
 +  "dock_apps": [
 +    "com.netflix.ninja",
@@ -1678,7 +1706,8 @@ index 00000000..9a6a8b2a
 +    "me.efesser.flauncher",
 +    "mediatek.factorymenu.ui",
 +    "mtktvapi.agent",
-+    "io.github.maxhayim.brightness"
++    "io.github.maxhayim.brightness",
++    "com.deepakpk.usbgallery"
 +  ],
 +  "fill_dock": false,
 +  "columns": 6,
@@ -1736,6 +1765,8 @@ index 00000000..9a6a8b2a
 +  "app_labels": [
 +    "org.smarttube.stable=YouTube"
 +  ],
-+  "down_drawer": true
++  "down_drawer": true,
++  "library_ok_opens": true,
++  "dock_only": true
 +}
 \ No newline at end of file
