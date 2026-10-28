@@ -1,6 +1,6 @@
-# Mi Launcher TV
+# Clean Your TV by AleMatwijczuk
 
-Esta es mi versión de [CleanYourTV](https://github.com/Gathin23/cleanyourtv) (licencia MIT, créditos a su autor y
+Esta es mi versión (de AleMatwijczuk) de [CleanYourTV](https://github.com/Gathin23/cleanyourtv) (licencia MIT, créditos a su autor y
 colaboradores), con estos agregados:
 
 - **Videos de fondo** que rotan cada 5 minutos, más oscuros de noche, con opción Sí/No en Ajustes del launcher (⌂).

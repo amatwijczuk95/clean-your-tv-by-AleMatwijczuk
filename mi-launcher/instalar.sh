@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Instala "Mi Launcher TV" (CleanYourTV con los cambios de esta rama) en otra TV Android.
+# Instala "Clean Your TV by AleMatwijczuk" (CleanYourTV con los cambios de esta rama) en otra TV Android.
 #
 # Uso, en Git Bash y desde la carpeta del repo:
 #   mi-launcher/instalar.sh <ip de la TV> [carpeta con los APK]
