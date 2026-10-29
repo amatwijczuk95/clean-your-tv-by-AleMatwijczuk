@@ -236,10 +236,10 @@ index 5d4b78fb..a548ec41 100644
      /**
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java b/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java
 new file mode 100644
-index 00000000..d8be5b10
+index 00000000..27b42aa2
 --- /dev/null
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java
-@@ -0,0 +1,463 @@
+@@ -0,0 +1,480 @@
 +package com.gathin.tvhome;
 +
 +import android.app.Activity;
@@ -306,6 +306,15 @@ index 00000000..d8be5b10
 +        this.host = host;
 +        this.dp = activity.getResources().getDisplayMetrics().density;
 +    }
++
++    /** Durations for this panel, kept the same however fast the TV's animator scale is set (0.5x here). */
++    static long ms(long base) {
++        float s = android.animation.ValueAnimator.getDurationScale();
++        return s > 0f && s < 1f ? Math.round(base / s) : base;
++    }
++
++    private static final android.view.animation.Interpolator EASE_OUT = new android.view.animation.DecelerateInterpolator(2f);
++    private static final android.view.animation.Interpolator EASE_IN = new android.view.animation.AccelerateInterpolator(1.5f);
 +
 +    boolean isOpen() {
 +        return open;
@@ -387,10 +396,11 @@ index 00000000..d8be5b10
 +        open = true;
 +        panel.setVisibility(View.VISIBLE);
 +        panel.setAlpha(0f);
++        panel.setTranslationY(48 * dp);
 +        panel.post(() -> {
 +            if (!open) return;
 +            host.slideHome(-panel.getHeight() + 24 * dp, true);
-+            panel.animate().alpha(1f).setDuration(180).start();
++            panel.animate().alpha(1f).translationY(0f).setInterpolator(EASE_OUT).setDuration(ms(320)).start();
 +            View first = row.getChildCount() > 0 ? row.getChildAt(0) : null;
 +            if (first != null) first.requestFocus();
 +        });
@@ -402,7 +412,7 @@ index 00000000..d8be5b10
 +        open = false;
 +        panel.animate().cancel();
 +        if (animate) {
-+            panel.animate().alpha(0f).setDuration(140).withEndAction(() -> {
++            panel.animate().alpha(0f).translationY(32 * dp).setInterpolator(EASE_IN).setDuration(ms(200)).withEndAction(() -> {
 +                if (!open) panel.setVisibility(View.GONE);
 +            }).start();
 +        } else {
@@ -444,7 +454,14 @@ index 00000000..d8be5b10
 +        toggle.setOnFocusChangeListener((v, has) -> v.setBackground(pillBackground(has)));
 +        toggle.setOnClickListener(v -> {
 +            byDay = !byDay;
-+            fillForecast();
++            float shift = 14 * dp * (byDay ? 1 : -1);
++            columns.animate().cancel();
++            columns.animate().alpha(0f).translationX(-shift).setInterpolator(EASE_IN).setDuration(ms(130))
++                    .withEndAction(() -> {
++                        fillForecast();
++                        columns.setTranslationX(shift);
++                        columns.animate().alpha(1f).translationX(0f).setInterpolator(EASE_OUT).setDuration(ms(220)).start();
++                    }).start();
 +        });
 +        forecast.addView(toggle);
 +        columns = new LinearLayout(activity);
@@ -585,7 +602,7 @@ index 00000000..d8be5b10
 +        pill.setBackground(pillBackground(false));
 +        pill.setOnFocusChangeListener((v, has) -> {
 +            v.setBackground(pillBackground(has));
-+            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setDuration(120).start();
++            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setInterpolator(EASE_OUT).setDuration(ms(180)).start();
 +        });
 +        pill.setOnClickListener(click);
 +        return pill;
@@ -649,7 +666,7 @@ index 00000000..d8be5b10
 +            ring.setCornerRadius(radius);
 +            ring.setStroke(Math.round(2.5f * dp), 0xF2FFFFFF);
 +            frame.setForeground(has ? ring : null);
-+            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setDuration(120).start();
++            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setInterpolator(EASE_OUT).setDuration(ms(180)).start();
 +        });
 +        col.setOnClickListener(v -> {
 +            close(false);
@@ -704,7 +721,7 @@ index 00000000..d8be5b10
 +    }
 +}
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java
-index e4d1ab46..a5f6880a 100644
+index e4d1ab46..67f95383 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java
 @@ -34,6 +34,8 @@ public final class LauncherSettingsActivity extends Activity {
@@ -716,7 +733,15 @@ index e4d1ab46..a5f6880a 100644
      private TextView advancedChoice;
      private TextView followThemeChoice;
      private TextView openOnStartChoice;
-@@ -108,6 +110,27 @@ public final class LauncherSettingsActivity extends Activity {
+@@ -46,6 +48,7 @@ public final class LauncherSettingsActivity extends Activity {
+     @Override
+     protected void onCreate(Bundle state) {
+         super.onCreate(state);
++        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);   // local: soft entry
+         setContentView(R.layout.activity_launcher_settings);
+         choices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
+         Config config = Config.load(this);
+@@ -108,6 +111,27 @@ public final class LauncherSettingsActivity extends Activity {
          }
          wallpaperChoice = findViewById(R.id.wallpaperChoice);
          wallpaperChoice.setOnClickListener(v -> showWallpaperPicker());
@@ -744,7 +769,7 @@ index e4d1ab46..a5f6880a 100644
          animationsChoice = findViewById(R.id.animationsChoice);
          animationsChoice.setOnClickListener(v -> {
              animations = !animations;
-@@ -286,6 +309,8 @@ public final class LauncherSettingsActivity extends Activity {
+@@ -286,6 +310,8 @@ public final class LauncherSettingsActivity extends Activity {
          for (int i = 0; i < dockChoices.length; i++) {
              dockChoices[i].setSelected(dockOpacity == DOCK_OPACITIES[i]);
          }
@@ -753,8 +778,19 @@ index e4d1ab46..a5f6880a 100644
          animationsChoice.setText(getString(R.string.animations_state,
                  getString(animations ? R.string.on : R.string.off)));
          advancedChoice.setText(getString(R.string.advanced_effects_state,
+@@ -315,4 +341,10 @@ public final class LauncherSettingsActivity extends Activity {
+             Toast.makeText(this, R.string.not_available, Toast.LENGTH_LONG).show();
+         }
+     }
++
++    @Override
++    public void finish() {
++        super.finish();
++        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);   // local: soft exit
++    }
+ }
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
-index 17961443..d346768c 100644
+index 17961443..ac636daa 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
 @@ -295,6 +295,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
@@ -837,7 +873,7 @@ index 17961443..d346768c 100644
          // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window.
          if (event.getKeyCode() >= 1000 && RemoteKeys.handle(this, event, homeAppKeys.get(event.getKeyCode()), null)) return true;
          if (handleSettingsKey(event)) return true;
-@@ -1707,6 +1725,81 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -1707,6 +1725,92 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          }
      }
  
@@ -895,15 +931,26 @@ index 17961443..d346768c 100644
 +                    dy = Math.max(dy, -Math.max(0f, room));
 +                }
 +            }
-+            grid.animate().translationY(dy).setDuration(220).start();
-+            hero.animate().translationY(dy).alpha(open ? 0f : 1f).setDuration(220).start();
++            android.view.animation.Interpolator ease = new android.view.animation.DecelerateInterpolator(2f);
++            grid.animate().translationY(dy).setInterpolator(ease).setDuration(DownDrawer.ms(340))
++                    .withEndAction(open ? null : () -> {
++                        // Back in place: the shelf name fades in again over the focused tile's final position.
++                        heroShown = false;
++                        resnapGlass();
++                    }).start();
++            if (open) {
++                hero.animate().translationY(dy).alpha(0f).setInterpolator(ease).setDuration(DownDrawer.ms(200)).start();
++            } else {
++                hero.animate().cancel();
++                hero.setAlpha(0f);
++            }
 +        }
 +        @Override public void openLibrary() { onLibraryRequested(); }
 +        @Override public void focusDock(int p) {
 +            RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(p);
 +            View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
 +            if (card != null) card.requestFocus();
-+            root.postDelayed(MainActivity.this::resnapGlass, 260);
++            // The glass and shelf are re-placed when the dock has slid back (slideHome's end action).
 +        }
 +    };
 +
@@ -1672,10 +1719,10 @@ index 00000000..47fe6821
 +com.overdevs.at4k
 diff --git a/mi-launcher/tema/config.json b/mi-launcher/tema/config.json
 new file mode 100644
-index 00000000..593e3e38
+index 00000000..585b03ff
 --- /dev/null
 +++ b/mi-launcher/tema/config.json
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,94 @@
 +{
 +  "dock_apps": [
 +    "com.netflix.ninja",
@@ -1767,6 +1814,7 @@ index 00000000..593e3e38
 +  ],
 +  "down_drawer": true,
 +  "library_ok_opens": true,
-+  "dock_only": true
++  "dock_only": true,
++  "advanced_effects": true
 +}
 \ No newline at end of file
