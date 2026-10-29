@@ -65,6 +65,15 @@ final class DownDrawer {
         this.dp = activity.getResources().getDisplayMetrics().density;
     }
 
+    /** Durations for this panel, kept the same however fast the TV's animator scale is set (0.5x here). */
+    static long ms(long base) {
+        float s = android.animation.ValueAnimator.getDurationScale();
+        return s > 0f && s < 1f ? Math.round(base / s) : base;
+    }
+
+    private static final android.view.animation.Interpolator EASE_OUT = new android.view.animation.DecelerateInterpolator(2f);
+    private static final android.view.animation.Interpolator EASE_IN = new android.view.animation.AccelerateInterpolator(1.5f);
+
     boolean isOpen() {
         return open;
     }
@@ -145,10 +154,11 @@ final class DownDrawer {
         open = true;
         panel.setVisibility(View.VISIBLE);
         panel.setAlpha(0f);
+        panel.setTranslationY(48 * dp);
         panel.post(() -> {
             if (!open) return;
             host.slideHome(-panel.getHeight() + 24 * dp, true);
-            panel.animate().alpha(1f).setDuration(180).start();
+            panel.animate().alpha(1f).translationY(0f).setInterpolator(EASE_OUT).setDuration(ms(320)).start();
             View first = row.getChildCount() > 0 ? row.getChildAt(0) : null;
             if (first != null) first.requestFocus();
         });
@@ -160,7 +170,7 @@ final class DownDrawer {
         open = false;
         panel.animate().cancel();
         if (animate) {
-            panel.animate().alpha(0f).setDuration(140).withEndAction(() -> {
+            panel.animate().alpha(0f).translationY(32 * dp).setInterpolator(EASE_IN).setDuration(ms(200)).withEndAction(() -> {
                 if (!open) panel.setVisibility(View.GONE);
             }).start();
         } else {
@@ -202,7 +212,14 @@ final class DownDrawer {
         toggle.setOnFocusChangeListener((v, has) -> v.setBackground(pillBackground(has)));
         toggle.setOnClickListener(v -> {
             byDay = !byDay;
-            fillForecast();
+            float shift = 14 * dp * (byDay ? 1 : -1);
+            columns.animate().cancel();
+            columns.animate().alpha(0f).translationX(-shift).setInterpolator(EASE_IN).setDuration(ms(130))
+                    .withEndAction(() -> {
+                        fillForecast();
+                        columns.setTranslationX(shift);
+                        columns.animate().alpha(1f).translationX(0f).setInterpolator(EASE_OUT).setDuration(ms(220)).start();
+                    }).start();
         });
         forecast.addView(toggle);
         columns = new LinearLayout(activity);
@@ -343,7 +360,7 @@ final class DownDrawer {
         pill.setBackground(pillBackground(false));
         pill.setOnFocusChangeListener((v, has) -> {
             v.setBackground(pillBackground(has));
-            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setDuration(120).start();
+            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setInterpolator(EASE_OUT).setDuration(ms(180)).start();
         });
         pill.setOnClickListener(click);
         return pill;
@@ -407,7 +424,7 @@ final class DownDrawer {
             ring.setCornerRadius(radius);
             ring.setStroke(Math.round(2.5f * dp), 0xF2FFFFFF);
             frame.setForeground(has ? ring : null);
-            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setDuration(120).start();
+            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setInterpolator(EASE_OUT).setDuration(ms(180)).start();
         });
         col.setOnClickListener(v -> {
             close(false);

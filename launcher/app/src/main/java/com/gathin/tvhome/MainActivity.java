@@ -1779,15 +1779,26 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     dy = Math.max(dy, -Math.max(0f, room));
                 }
             }
-            grid.animate().translationY(dy).setDuration(220).start();
-            hero.animate().translationY(dy).alpha(open ? 0f : 1f).setDuration(220).start();
+            android.view.animation.Interpolator ease = new android.view.animation.DecelerateInterpolator(2f);
+            grid.animate().translationY(dy).setInterpolator(ease).setDuration(DownDrawer.ms(340))
+                    .withEndAction(open ? null : () -> {
+                        // Back in place: the shelf name fades in again over the focused tile's final position.
+                        heroShown = false;
+                        resnapGlass();
+                    }).start();
+            if (open) {
+                hero.animate().translationY(dy).alpha(0f).setInterpolator(ease).setDuration(DownDrawer.ms(200)).start();
+            } else {
+                hero.animate().cancel();
+                hero.setAlpha(0f);
+            }
         }
         @Override public void openLibrary() { onLibraryRequested(); }
         @Override public void focusDock(int p) {
             RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(p);
             View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
             if (card != null) card.requestFocus();
-            root.postDelayed(MainActivity.this::resnapGlass, 260);
+            // The glass and shelf are re-placed when the dock has slid back (slideHome's end action).
         }
     };
 

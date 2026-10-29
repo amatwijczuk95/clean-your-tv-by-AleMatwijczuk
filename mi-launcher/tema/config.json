@@ -89,5 +89,6 @@
   ],
   "down_drawer": true,
   "library_ok_opens": true,
-  "dock_only": true
+  "dock_only": true,
+  "advanced_effects": true
 }
