@@ -272,21 +272,6 @@ final class DownDrawer {
     private void fill() {
         fillForecast();
         row.removeAllViews();
-        if (host.mediaActive()) {
-            row.addView(iconPill(R.drawable.ic_np_prev, "", v -> host.mediaPrevious(), 64));
-            boolean playing = host.mediaPlaying();
-            TextView pp = iconPill(playing ? R.drawable.ic_np_pause : R.drawable.ic_np_play, playLabel(playing), null, 136);
-            pp.setOnClickListener(v -> {
-                boolean wasPlaying = host.mediaPlaying();
-                host.mediaPlayPause();
-                setIcon((TextView) v, wasPlaying ? R.drawable.ic_np_play : R.drawable.ic_np_pause);
-                ((TextView) v).setText(playLabel(!wasPlaying));
-            });
-            row.addView(pp);
-            View nx = iconPill(R.drawable.ic_np_next, "", v -> host.mediaNext(), 64);
-            ((LinearLayout.LayoutParams) nx.getLayoutParams()).setMarginEnd(Math.round(30 * dp));
-            row.addView(nx);
-        }
         row.addView(pill(activity.getString(R.string.down_drawer_search), v -> openSearch()));
         Intent usb = usbIntent();
         if (usb != null) {

@@ -44,6 +44,14 @@ final class NowPlaying {
     private static final long HIDE_PAUSED_MS = 30_000L;
     private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable recheck = this::refresh;
+    /** Safety net while the card is up: re-read the session every few seconds in case a callback is missed. */
+    private final Runnable poll = new Runnable() {
+        @Override public void run() {
+            if (!resumed) return;
+            refresh();
+            if (shown) handler.postDelayed(this, 3000);
+        }
+    };
     private final ImageView prevBtn, playBtn, nextBtn;
     private FocusHost focusHost;
     private long lastCommand;
@@ -235,6 +243,10 @@ final class NowPlaying {
             // not registered
         }
         if (controller != null) controller.unregisterCallback(callback);
+        // Forget it: on the next resume pick() registers the callback again. Keeping it here left the same session
+        // without a callback after any trip away from Home, so track and play/pause changes stopped showing.
+        controller = null;
+        handler.removeCallbacks(poll);
     }
 
     /** Takes the session that is playing, else the most recent one that is paused. */
@@ -278,6 +290,8 @@ final class NowPlaying {
             if (show && resumed) handler.postDelayed(recheck, left + 500);
         }
         shown = show;
+        handler.removeCallbacks(poll);
+        if (show && resumed) handler.postDelayed(poll, 3000);
         if (show) {
             String t = m.getString(MediaMetadata.METADATA_KEY_TITLE);
             String ar = m.getString(MediaMetadata.METADATA_KEY_ARTIST);
