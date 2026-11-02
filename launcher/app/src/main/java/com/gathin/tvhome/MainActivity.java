@@ -298,6 +298,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private VideoBackdrop videoBackdrop;
     private WeatherLine weatherLine;
     private DownDrawer downDrawer;
+    private NowPlaying nowPlaying;
     private boolean appLibrarySelection;
     private boolean libraryOkOpens;
     private boolean libraryFocusPending;
@@ -457,6 +458,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroName = findViewById(R.id.heroName);
         hero = findViewById(R.id.hero);
         if (cfg.downDrawer) downDrawer = new DownDrawer(this, root, downHost);
+        if (cfg.nowPlaying) nowPlaying = new NowPlaying(this, root);
         // The hero is now a group (name, and the cinematic lines): without this every fade of the default
         // shelf would render it through an offscreen buffer first, as the glow above notes.
         hero.forceHasOverlappingRendering(false);
@@ -955,6 +957,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onResume();
         if (videoBackdrop != null) videoBackdrop.start();
         if (weatherLine != null) weatherLine.resume();
+        if (nowPlaying != null) nowPlaying.resume();
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1168,6 +1171,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onPause();
         if (videoBackdrop != null) videoBackdrop.stop();
         if (weatherLine != null) weatherLine.pause();
+        if (nowPlaying != null) nowPlaying.pause();
         if (downDrawer != null) downDrawer.close(false);
         root.removeCallbacks(showIdleClock);
         endReorder();   // Home or another app while reordering keeps the order so far
@@ -1766,6 +1770,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         @Override public android.graphics.drawable.Drawable artworkAt(int p) { return adapter.artworkAt(p); }
         @Override public void launchAt(int p) { adapter.launchAt(p); }
         @Override public void slideHome(float dy, boolean open) {
+            if (nowPlaying != null) nowPlaying.setHidden(open);
             if (open) {
                 hideGlass();
                 // Never slide the dock over the clock and date: stop just under the header.
@@ -1794,6 +1799,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
         @Override public void openLibrary() { onLibraryRequested(); }
+        @Override public boolean mediaActive() { return nowPlaying != null && nowPlaying.active(); }
+        @Override public boolean mediaPlaying() { return nowPlaying != null && nowPlaying.isPlaying(); }
+        @Override public void mediaPlayPause() { if (nowPlaying != null) nowPlaying.playPause(); }
+        @Override public void mediaNext() { if (nowPlaying != null) nowPlaying.next(); }
+        @Override public void mediaPrevious() { if (nowPlaying != null) nowPlaying.previous(); }
         @Override public void focusDock(int p) {
             RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(p);
             View card = vh == null ? null : vh.itemView.findViewById(R.id.card);

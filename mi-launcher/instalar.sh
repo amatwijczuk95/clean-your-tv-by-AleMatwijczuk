@@ -77,6 +77,7 @@ if [ "$DRY" = 1 ]; then echo "  [theme] mi-launcher/tema"; else tools/theme.sh m
 
 echo "== 6/8 Protector de pantalla Reloj, inicio al encender y animaciones más rápidas"
 tv "settings put secure screensaver_components $HOME_PKG/.ClockDream"
+tv "cmd notification allow_listener $HOME_PKG/$HOME_PKG.MediaListener; echo reproduciendo-ahora-activado"
 tv 'settings put global window_animation_scale 0.5; settings put global transition_animation_scale 0.5; settings put global animator_duration_scale 0.5'
 SVC=$HOME_PKG/.HomeKeyService
 tv "cmd appops set $HOME_PKG AUTO_START allow 2>/dev/null; cmd appops set $HOME_PKG APP_AUTO_START allow 2>/dev/null; appops write-settings 2>/dev/null; s=\$(settings get secure enabled_accessibility_services); case \"\$s\" in *HomeKeyService*) settings put secure enabled_accessibility_services ''; settings put secure accessibility_enabled 0; sleep 1; settings put secure enabled_accessibility_services \"\$s\" ;; null|'') settings put secure enabled_accessibility_services $SVC ;; *) settings put secure enabled_accessibility_services \"\$s:$SVC\" ;; esac; settings put secure accessibility_enabled 1; echo ayudante-activado"

@@ -155,4 +155,9 @@
     <string name="forecast_by_day">Por día  ▸</string>
     <string name="forecast_today">Hoy</string>
     <string name="down_drawer_usb">💾  USB</string>
+    <string name="now_playing_on">Sonando en %1$s</string>
+    <string name="now_paused_on">En pausa · %1$s</string>
+    <string name="media_pause">⏸  Pausar</string>
+    <string name="media_play">▶  Reproducir</string>
+    <string name="now_playing_service">Inicio: reproduciendo ahora</string>
 </resources>

@@ -82,6 +82,8 @@ final class Config {
     boolean downDrawer;
     /** Local addition: Home shows the dock only (theme "dock_only"). */
     boolean dockOnly;
+    /** Local addition: the now-playing card and controls (theme "now_playing"). */
+    boolean nowPlaying;
     final String liveTvPackage;
     final String liveTvAction;
     final String liveTvInputId;
@@ -702,6 +704,7 @@ final class Config {
             config.weatherIcon = bool(json, "weather_icon", true);
             config.downDrawer = bool(json, "down_drawer", false);
             config.dockOnly = bool(json, "dock_only", false);
+            config.nowPlaying = bool(json, "now_playing", false);
         }
         if (json != null) config.videoRotationMinutes = integer(json, "video_rotation_minutes", 5, 1, 240);
         return config;

@@ -247,5 +247,15 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/input_key_service" />
         </service>
+        <!-- Local addition: lets Home read what a media app is playing (notification access, granted over ADB). -->
+        <service
+            android:name=".MediaListener"
+            android:exported="true"
+            android:label="@string/now_playing_service"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

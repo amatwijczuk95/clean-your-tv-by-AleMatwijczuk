@@ -39,6 +39,11 @@ final class DownDrawer {
         void focusDock(int position);
         /** Open the App library (every installed app). */
         void openLibrary();
+        boolean mediaActive();
+        boolean mediaPlaying();
+        void mediaPlayPause();
+        void mediaNext();
+        void mediaPrevious();
     }
 
     private final Activity activity;
@@ -267,6 +272,19 @@ final class DownDrawer {
     private void fill() {
         fillForecast();
         row.removeAllViews();
+        if (host.mediaActive()) {
+            row.addView(pill("⏮", v -> host.mediaPrevious(), 64));
+            TextView pp = (TextView) pill(playLabel(host.mediaPlaying()), null, 128);
+            pp.setOnClickListener(v -> {
+                boolean wasPlaying = host.mediaPlaying();
+                host.mediaPlayPause();
+                ((TextView) v).setText(playLabel(!wasPlaying));
+            });
+            row.addView(pp);
+            View nx = pill("⏭", v -> host.mediaNext(), 64);
+            ((LinearLayout.LayoutParams) nx.getLayoutParams()).setMarginEnd(Math.round(30 * dp));
+            row.addView(nx);
+        }
         row.addView(pill(activity.getString(R.string.down_drawer_search), v -> openSearch()));
         Intent usb = usbIntent();
         if (usb != null) {
@@ -345,7 +363,15 @@ final class DownDrawer {
         return v;
     }
 
+    private String playLabel(boolean playing) {
+        return activity.getString(playing ? R.string.media_pause : R.string.media_play);
+    }
+
     private View pill(String text, View.OnClickListener click) {
+        return pill(text, click, 128);
+    }
+
+    private View pill(String text, View.OnClickListener click, int widthDp) {
         TextView pill = new TextView(activity);
         pill.setText(text);
         pill.setTextColor(Color.WHITE);
@@ -353,7 +379,7 @@ final class DownDrawer {
         pill.setGravity(Gravity.CENTER);
         pill.setFocusable(true);
         pill.setFocusableInTouchMode(true);
-        int w = Math.round(128 * dp), h = Math.round(72 * dp);
+        int w = Math.round(widthDp * dp), h = Math.round(72 * dp);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, h);
         lp.setMarginEnd(Math.round(22 * dp));
         pill.setLayoutParams(lp);
