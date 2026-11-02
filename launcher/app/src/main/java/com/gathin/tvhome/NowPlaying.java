@@ -31,6 +31,23 @@ final class NowPlaying {
         void changed();
     }
 
+    /** What the card needs from Home to move focus in and out of it. */
+    interface FocusHost {
+        /** The dock position focused now, or -1. */
+        int dockFocus();
+        /** Focus the dock tile at this position (the glass follows). */
+        void focusDock(int position);
+        void hideGlass();
+    }
+
+    /** A paused player leaves Home after this long. */
+    private static final long HIDE_PAUSED_MS = 2 * 60_000L;
+    private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable recheck = this::refresh;
+    private final TextView prevBtn, playBtn, nextBtn;
+    private boolean shown;
+    private int returnTo;
+
     private final Context ctx;
     private final MediaSessionManager msm;
     private final ComponentName listener;
@@ -91,13 +108,91 @@ final class NowPlaying {
         text.addView(source);
         text.addView(title);
         text.addView(artist);
-        card.addView(text, new LinearLayout.LayoutParams(Math.round(260 * dp), ViewGroup.LayoutParams.WRAP_CONTENT));
+        card.addView(text, new LinearLayout.LayoutParams(Math.round(240 * dp), ViewGroup.LayoutParams.WRAP_CONTENT));
+        prevBtn = button("⏮");
+        playBtn = button("⏯");
+        nextBtn = button("⏭");
+        prevBtn.setOnClickListener(v -> previous());
+        playBtn.setOnClickListener(v -> playPause());
+        nextBtn.setOnClickListener(v -> next());
+        ((LinearLayout.LayoutParams) prevBtn.getLayoutParams()).setMarginStart(Math.round(14 * dp));
 
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.START);
         lp.leftMargin = Math.round(56 * dp);
         lp.topMargin = Math.round(122 * dp);
         root.addView(card, lp);
+    }
+
+    private TextView button(String glyph) {
+        TextView b = new TextView(ctx);
+        b.setText(glyph);
+        b.setTextSize(15f);
+        b.setGravity(Gravity.CENTER);
+        b.setFocusable(true);
+        b.setFocusableInTouchMode(true);
+        b.setTextColor(0xE6FFFFFF);
+        b.setBackground(buttonBackground(false));
+        b.setOnFocusChangeListener((v, has) -> {
+            v.setBackground(buttonBackground(has));
+            ((TextView) v).setTextColor(has ? 0xFF101010 : 0xE6FFFFFF);
+            v.animate().scaleX(has ? 1.1f : 1f).scaleY(has ? 1.1f : 1f).setDuration(DownDrawer.ms(160)).start();
+        });
+        int size = Math.round(40 * dp);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
+        lp.setMarginStart(Math.round(6 * dp));
+        card.addView(b, lp);
+        return b;
+    }
+
+    private GradientDrawable buttonBackground(boolean focused) {
+        GradientDrawable d = new GradientDrawable();
+        d.setShape(GradientDrawable.OVAL);
+        d.setColor(focused ? 0xF2FFFFFF : 0x26FFFFFF);
+        return d;
+    }
+
+    private boolean inCard(View v) {
+        for (Object p = v; p instanceof View; p = ((View) p).getParent()) if (p == card) return true;
+        return false;
+    }
+
+    /**
+     * Up from the dock goes to the card's play button while the card is up; Down from the card goes back to the
+     * dock tile it came from. Left and Right stay among the three buttons.
+     */
+    boolean onKey(android.view.KeyEvent e, View focus, FocusHost host) {
+        int code = e.getKeyCode();
+        boolean down = e.getAction() == android.view.KeyEvent.ACTION_DOWN;
+        boolean onCard = focus != null && inCard(focus);
+        if (!onCard) {
+            if (!shown || code != android.view.KeyEvent.KEYCODE_DPAD_UP) return false;
+            int pos = host.dockFocus();
+            if (pos < 0) return false;
+            if (down) {
+                returnTo = pos;
+                host.hideGlass();
+                playBtn.requestFocus();
+            }
+            return true;
+        }
+        switch (code) {
+            case android.view.KeyEvent.KEYCODE_DPAD_DOWN:
+                if (down) host.focusDock(returnTo);
+                return true;
+            case android.view.KeyEvent.KEYCODE_DPAD_UP:
+                return true;
+            case android.view.KeyEvent.KEYCODE_DPAD_LEFT:
+                if (down && focus == playBtn) prevBtn.requestFocus();
+                else if (down && focus == nextBtn) playBtn.requestFocus();
+                return true;
+            case android.view.KeyEvent.KEYCODE_DPAD_RIGHT:
+                if (down && focus == prevBtn) playBtn.requestFocus();
+                else if (down && focus == playBtn) nextBtn.requestFocus();
+                return true;
+            default:
+                return false;
+        }
     }
 
     private TextView label(float size, int color) {
@@ -125,6 +220,7 @@ final class NowPlaying {
 
     void pause() {
         resumed = false;
+        handler.removeCallbacks(recheck);
         try {
             msm.removeOnActiveSessionsChangedListener(sessions);
         } catch (Exception ignored) {
@@ -165,8 +261,15 @@ final class NowPlaying {
         MediaController c = controller;
         PlaybackState s = c == null ? null : c.getPlaybackState();
         MediaMetadata m = c == null ? null : c.getMetadata();
-        boolean show = s != null && m != null
-                && (s.getState() == PlaybackState.STATE_PLAYING || s.getState() == PlaybackState.STATE_PAUSED);
+        handler.removeCallbacks(recheck);
+        boolean show = s != null && m != null && s.getState() == PlaybackState.STATE_PLAYING;
+        if (s != null && m != null && s.getState() == PlaybackState.STATE_PAUSED) {
+            // The state's update time is when it paused: stay a while, then leave Home.
+            long left = HIDE_PAUSED_MS - (android.os.SystemClock.elapsedRealtime() - s.getLastPositionUpdateTime());
+            show = left > 0;
+            if (show && resumed) handler.postDelayed(recheck, left + 500);
+        }
+        shown = show;
         if (show) {
             String t = m.getString(MediaMetadata.METADATA_KEY_TITLE);
             String ar = m.getString(MediaMetadata.METADATA_KEY_ARTIST);
@@ -189,7 +292,12 @@ final class NowPlaying {
                 card.setTranslationY(8 * dp);
                 card.animate().alpha(1f).translationY(0f).setDuration(DownDrawer.ms(260)).start();
             }
+            playBtn.setText(isPlaying() ? "⏸" : "▶");
         } else if (card.getVisibility() == View.VISIBLE) {
+            if (inCard(card.findFocus())) {
+                View f = card.findFocus();
+                if (f != null) f.clearFocus();
+            }
             card.animate().alpha(0f).setDuration(DownDrawer.ms(200)).withEndAction(() -> card.setVisibility(View.GONE)).start();
         }
         if (onChange != null) onChange.changed();
@@ -205,8 +313,7 @@ final class NowPlaying {
     }
 
     boolean active() {
-        PlaybackState s = controller == null ? null : controller.getPlaybackState();
-        return s != null && (s.getState() == PlaybackState.STATE_PLAYING || s.getState() == PlaybackState.STATE_PAUSED);
+        return shown;
     }
 
     boolean isPlaying() {

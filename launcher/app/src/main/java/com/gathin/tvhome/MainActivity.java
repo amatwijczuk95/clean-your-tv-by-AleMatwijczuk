@@ -1280,6 +1280,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (nowPlaying != null && !reordering && (downDrawer == null || !downDrawer.isOpen())
+                && nowPlaying.onKey(event, getCurrentFocus(), nowPlayingHost)) return true;
         if (downDrawer != null && !reordering && downDrawer.onKey(event)) return true;
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window.
         if (event.getKeyCode() >= 1000 && RemoteKeys.handle(this, event, homeAppKeys.get(event.getKeyCode()), null)) return true;
@@ -1756,6 +1758,21 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             top.animate().alpha(in ? 1f : 0.3f).setStartDelay(in ? 0 : 1500).setDuration(in ? 150 : 600).start();
         });
     }
+
+    /** Local addition: what the now-playing card needs from Home. */
+    private final NowPlaying.FocusHost nowPlayingHost = new NowPlaying.FocusHost() {
+        @Override public int dockFocus() {
+            int pos = focusedTilePosition();
+            return pos >= 0 && pos < COLUMNS ? pos : -1;
+        }
+        @Override public void focusDock(int p) {
+            RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(p);
+            View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
+            if (card != null) card.requestFocus();
+            root.postDelayed(MainActivity.this::resnapGlass, 120);
+        }
+        @Override public void hideGlass() { MainActivity.this.hideGlass(); }
+    };
 
     /** Local addition: what the Down panel needs from Home. */
     private final DownDrawer.Host downHost = new DownDrawer.Host() {
