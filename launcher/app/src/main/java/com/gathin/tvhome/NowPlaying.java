@@ -41,10 +41,12 @@ final class NowPlaying {
     }
 
     /** A paused player leaves Home after this long. */
-    private static final long HIDE_PAUSED_MS = 2 * 60_000L;
+    private static final long HIDE_PAUSED_MS = 30_000L;
     private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable recheck = this::refresh;
-    private final TextView prevBtn, playBtn, nextBtn;
+    private final ImageView prevBtn, playBtn, nextBtn;
+    private FocusHost focusHost;
+    private long lastCommand;
     private boolean shown;
     private int returnTo;
 
@@ -109,9 +111,9 @@ final class NowPlaying {
         text.addView(title);
         text.addView(artist);
         card.addView(text, new LinearLayout.LayoutParams(Math.round(240 * dp), ViewGroup.LayoutParams.WRAP_CONTENT));
-        prevBtn = button("⏮");
-        playBtn = button("⏯");
-        nextBtn = button("⏭");
+        prevBtn = button(R.drawable.ic_np_prev);
+        playBtn = button(R.drawable.ic_np_play);
+        nextBtn = button(R.drawable.ic_np_next);
         prevBtn.setOnClickListener(v -> previous());
         playBtn.setOnClickListener(v -> playPause());
         nextBtn.setOnClickListener(v -> next());
@@ -124,18 +126,16 @@ final class NowPlaying {
         root.addView(card, lp);
     }
 
-    private TextView button(String glyph) {
-        TextView b = new TextView(ctx);
-        b.setText(glyph);
-        b.setTextSize(15f);
-        b.setGravity(Gravity.CENTER);
-        b.setFocusable(true);
-        b.setFocusableInTouchMode(true);
-        b.setTextColor(0xE6FFFFFF);
+    private ImageView button(int icon) {
+        ImageView b = new ImageView(ctx);
+        b.setImageResource(icon);
+        b.setScaleType(ImageView.ScaleType.CENTER);
+        b.setFocusable(false);
+        b.setImageTintList(android.content.res.ColorStateList.valueOf(0xE6FFFFFF));
         b.setBackground(buttonBackground(false));
         b.setOnFocusChangeListener((v, has) -> {
             v.setBackground(buttonBackground(has));
-            ((TextView) v).setTextColor(has ? 0xFF101010 : 0xE6FFFFFF);
+            ((ImageView) v).setImageTintList(android.content.res.ColorStateList.valueOf(has ? 0xFF101010 : 0xE6FFFFFF));
             v.animate().scaleX(has ? 1.1f : 1f).scaleY(has ? 1.1f : 1f).setDuration(DownDrawer.ms(160)).start();
         });
         int size = Math.round(40 * dp);
@@ -162,6 +162,7 @@ final class NowPlaying {
      * dock tile it came from. Left and Right stay among the three buttons.
      */
     boolean onKey(android.view.KeyEvent e, View focus, FocusHost host) {
+        focusHost = host;
         int code = e.getKeyCode();
         boolean down = e.getAction() == android.view.KeyEvent.ACTION_DOWN;
         boolean onCard = focus != null && inCard(focus);
@@ -192,6 +193,13 @@ final class NowPlaying {
                 return true;
             default:
                 return false;
+        }
+    }
+
+    private void setButtonsFocusable(boolean on) {
+        for (View b : new View[]{prevBtn, playBtn, nextBtn}) {
+            b.setFocusable(on);
+            b.setFocusableInTouchMode(on);
         }
     }
 
@@ -262,7 +270,7 @@ final class NowPlaying {
         PlaybackState s = c == null ? null : c.getPlaybackState();
         MediaMetadata m = c == null ? null : c.getMetadata();
         handler.removeCallbacks(recheck);
-        boolean show = s != null && m != null && s.getState() == PlaybackState.STATE_PLAYING;
+        boolean show = s != null && m != null && isPlaying();
         if (s != null && m != null && s.getState() == PlaybackState.STATE_PAUSED) {
             // The state's update time is when it paused: stay a while, then leave Home.
             long left = HIDE_PAUSED_MS - (android.os.SystemClock.elapsedRealtime() - s.getLastPositionUpdateTime());
@@ -292,12 +300,13 @@ final class NowPlaying {
                 card.setTranslationY(8 * dp);
                 card.animate().alpha(1f).translationY(0f).setDuration(DownDrawer.ms(260)).start();
             }
-            playBtn.setText(isPlaying() ? "⏸" : "▶");
+            playBtn.setImageResource(isPlaying() ? R.drawable.ic_np_pause : R.drawable.ic_np_play);
+            setButtonsFocusable(true);
         } else if (card.getVisibility() == View.VISIBLE) {
-            if (inCard(card.findFocus())) {
-                View f = card.findFocus();
-                if (f != null) f.clearFocus();
-            }
+            // Leaving while selected: hand focus back to the dock first, then make the buttons unreachable, so focus
+            // never lands on a fading (or gone) button where OK would press Play unseen.
+            if (card.findFocus() != null && focusHost != null) focusHost.focusDock(returnTo);
+            setButtonsFocusable(false);
             card.animate().alpha(0f).setDuration(DownDrawer.ms(200)).withEndAction(() -> card.setVisibility(View.GONE)).start();
         }
         if (onChange != null) onChange.changed();
@@ -316,23 +325,44 @@ final class NowPlaying {
         return shown;
     }
 
+    /** Playing, or about to (buffering, connecting, seeking): a press then means Pause, never Play. */
     boolean isPlaying() {
         PlaybackState s = controller == null ? null : controller.getPlaybackState();
-        return s != null && s.getState() == PlaybackState.STATE_PLAYING;
+        if (s == null) return false;
+        switch (s.getState()) {
+            case PlaybackState.STATE_PLAYING:
+            case PlaybackState.STATE_BUFFERING:
+            case PlaybackState.STATE_CONNECTING:
+            case PlaybackState.STATE_FAST_FORWARDING:
+            case PlaybackState.STATE_REWINDING:
+            case PlaybackState.STATE_SKIPPING_TO_NEXT:
+            case PlaybackState.STATE_SKIPPING_TO_PREVIOUS:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /** One command per press: a second press within 700 ms (a bounce or a held OK) is ignored. */
+    private boolean debounced() {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now - lastCommand < 700) return false;
+        lastCommand = now;
+        return true;
     }
 
     void playPause() {
-        if (controller == null) return;
+        if (controller == null || !debounced()) return;
         if (isPlaying()) controller.getTransportControls().pause();
         else controller.getTransportControls().play();
     }
 
     void next() {
-        if (controller != null) controller.getTransportControls().skipToNext();
+        if (controller != null && debounced()) controller.getTransportControls().skipToNext();
     }
 
     void previous() {
-        if (controller != null) controller.getTransportControls().skipToPrevious();
+        if (controller != null && debounced()) controller.getTransportControls().skipToPrevious();
     }
 
     /** Hide or show the card with the Down panel, which covers that part of Home. */

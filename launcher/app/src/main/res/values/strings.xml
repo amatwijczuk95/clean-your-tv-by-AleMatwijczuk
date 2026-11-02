@@ -165,7 +165,7 @@
     <string name="down_drawer_usb">💾  USB</string>
     <string name="now_playing_on">Playing on %1$s</string>
     <string name="now_paused_on">Paused · %1$s</string>
-    <string name="media_pause">⏸  Pause</string>
-    <string name="media_play">▶  Play</string>
+    <string name="media_pause">Pause</string>
+    <string name="media_play">Play</string>
     <string name="now_playing_service">Home: now playing</string>
 </resources>

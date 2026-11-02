@@ -273,15 +273,17 @@ final class DownDrawer {
         fillForecast();
         row.removeAllViews();
         if (host.mediaActive()) {
-            row.addView(pill("⏮", v -> host.mediaPrevious(), 64));
-            TextView pp = (TextView) pill(playLabel(host.mediaPlaying()), null, 128);
+            row.addView(iconPill(R.drawable.ic_np_prev, "", v -> host.mediaPrevious(), 64));
+            boolean playing = host.mediaPlaying();
+            TextView pp = iconPill(playing ? R.drawable.ic_np_pause : R.drawable.ic_np_play, playLabel(playing), null, 136);
             pp.setOnClickListener(v -> {
                 boolean wasPlaying = host.mediaPlaying();
                 host.mediaPlayPause();
+                setIcon((TextView) v, wasPlaying ? R.drawable.ic_np_play : R.drawable.ic_np_pause);
                 ((TextView) v).setText(playLabel(!wasPlaying));
             });
             row.addView(pp);
-            View nx = pill("⏭", v -> host.mediaNext(), 64);
+            View nx = iconPill(R.drawable.ic_np_next, "", v -> host.mediaNext(), 64);
             ((LinearLayout.LayoutParams) nx.getLayoutParams()).setMarginEnd(Math.round(30 * dp));
             row.addView(nx);
         }
@@ -361,6 +363,26 @@ final class DownDrawer {
         v.setGravity(Gravity.CENTER_HORIZONTAL);
         v.setPadding(0, Math.round(1 * dp), 0, Math.round(1 * dp));
         return v;
+    }
+
+    /** A pill with a drawn icon (and optional text) instead of an emoji glyph. */
+    private TextView iconPill(int icon, String text, View.OnClickListener click, int widthDp) {
+        TextView p = (TextView) pill(text, click, widthDp);
+        setIcon(p, icon);
+        if (text.isEmpty()) {
+            int side = Math.round((widthDp - 22) / 2f * dp);
+            p.setPadding(side, 0, side, 0);
+        } else {
+            p.setCompoundDrawablePadding(Math.round(8 * dp));
+            p.setPadding(Math.round(16 * dp), 0, Math.round(16 * dp), 0);
+        }
+        return p;
+    }
+
+    private void setIcon(TextView v, int icon) {
+        android.graphics.drawable.Drawable d = activity.getDrawable(icon);
+        if (d != null) d.setTint(0xF2FFFFFF);
+        v.setCompoundDrawablesRelativeWithIntrinsicBounds(d, null, null, null);
     }
 
     private String playLabel(boolean playing) {
