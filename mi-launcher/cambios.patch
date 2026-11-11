@@ -255,10 +255,10 @@ index 5d4b78fb..7055382d 100644
      /**
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java b/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java
 new file mode 100644
-index 00000000..f291a796
+index 00000000..b8935361
 --- /dev/null
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java
-@@ -0,0 +1,513 @@
+@@ -0,0 +1,535 @@
 +package com.gathin.tvhome;
 +
 +import android.app.Activity;
@@ -533,22 +533,22 @@ index 00000000..f291a796
 +    private void fill() {
 +        fillForecast();
 +        row.removeAllViews();
-+        row.addView(pill(activity.getString(R.string.down_drawer_search), v -> openSearch()));
++        row.addView(iconPill(R.drawable.ic_tv_search, activity.getString(R.string.down_drawer_search), v -> openSearch(), 128));
 +        Intent usb = usbIntent();
 +        if (usb != null) {
-+            row.addView(pill(activity.getString(R.string.down_drawer_usb), v -> {
++            row.addView(iconPill(R.drawable.ic_tv_usb, activity.getString(R.string.down_drawer_usb), v -> {
 +                close(false);
 +                try {
 +                    activity.startActivity(usb);
 +                } catch (Exception ignored) {
 +                    // the player went away meanwhile
 +                }
-+            }));
++            }, 112));
 +        }
-+        row.addView(pill(activity.getString(R.string.down_drawer_all_apps), v -> {
++        row.addView(iconPill(R.drawable.ic_tv_apps, activity.getString(R.string.down_drawer_all_apps), v -> {
 +            close(false);
 +            host.openLibrary();
-+        }));
++        }, 168));
 +        long now = System.currentTimeMillis();
 +        List<Integer> order = new ArrayList<>();
 +        for (int i = 0; i < host.dockCount(); i++) {
@@ -578,6 +578,15 @@ index 00000000..f291a796
 +        }
 +        forecast.setVisibility(View.VISIBLE);
 +        toggle.setText(byDay ? R.string.forecast_by_day : R.string.forecast_by_hour);
++        android.graphics.drawable.Drawable chev = activity.getDrawable(R.drawable.ic_tv_chevron);
++        if (chev != null) {
++            chev = chev.mutate();
++            chev.setTint(0xD9FFFFFF);
++            int px = Math.round(13 * dp);
++            chev.setBounds(0, 0, px, px);
++            toggle.setCompoundDrawablesRelative(null, null, chev, null);
++            toggle.setCompoundDrawablePadding(Math.round(6 * dp));
++        }
 +        columns.removeAllViews();
 +        for (String[] it : items) {
 +            LinearLayout col = new LinearLayout(activity);
@@ -586,8 +595,9 @@ index 00000000..f291a796
 +            col.setMinimumWidth(Math.round((byDay ? 94 : 66) * dp));
 +            col.setPadding(Math.round(2 * dp), 0, Math.round(2 * dp), 0);
 +            col.addView(text(it[0], 12f, 0x99FFFFFF));
-+            String main = (it[1].isEmpty() ? "" : it[1] + " ") + it[2] + (byDay ? "  " : "");
++            String main = it[2] + (byDay ? "  " : "");
 +            TextView big = text(main, byDay ? 15f : 16f, 0xF2FFFFFF);
++            WeatherLine.setIcon(big, WeatherLine.iconFor(it[1]) == 0 ? -1 : Integer.parseInt(it[1]), 0xF2FFFFFF, 16);
 +            if (byDay) {
 +                android.text.SpannableString sp = new android.text.SpannableString(main + it[3]);
 +                sp.setSpan(new android.text.style.ForegroundColorSpan(0x80FFFFFF), main.length(), sp.length(), 0);
@@ -595,7 +605,19 @@ index 00000000..f291a796
 +            }
 +            col.addView(big);
 +            String r = byDay ? it[4] : it[3];
-+            col.addView(text(r.isEmpty() ? " " : "☂︎ " + r, 11f, 0xCC8EC9FF));
++            TextView rain = text(r.isEmpty() ? " " : r, 11f, 0xCC8EC9FF);
++            if (!r.isEmpty()) {
++                android.graphics.drawable.Drawable drop = activity.getDrawable(R.drawable.ic_wx_drop);
++                if (drop != null) {
++                    drop = drop.mutate();
++                    drop.setTint(0xCC8EC9FF);
++                    int px = Math.round(10 * dp);
++                    drop.setBounds(0, 0, px, px);
++                    rain.setCompoundDrawablesRelative(drop, null, null, null);
++                    rain.setCompoundDrawablePadding(Math.round(3 * dp));
++                }
++            }
++            col.addView(rain);
 +            columns.addView(col);
 +        }
 +    }
@@ -1064,10 +1086,10 @@ index 00000000..d2dc6fb8
 +}
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/NowPlaying.java b/launcher/app/src/main/java/com/gathin/tvhome/NowPlaying.java
 new file mode 100644
-index 00000000..738c7e1b
+index 00000000..925e1952
 --- /dev/null
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/NowPlaying.java
-@@ -0,0 +1,387 @@
+@@ -0,0 +1,402 @@
 +package com.gathin.tvhome;
 +
 +import android.content.ComponentName;
@@ -1126,6 +1148,9 @@ index 00000000..738c7e1b
 +    private FocusHost focusHost;
 +    private long lastCommand;
 +    private boolean shown;
++    /** Something played while Home was up (or as it came up); only then may a paused player stay on Home. */
++    private boolean armed;
++    private long pausedAt;
 +    private int returnTo;
 +
 +    private final Context ctx;
@@ -1296,6 +1321,8 @@ index 00000000..738c7e1b
 +
 +    void resume() {
 +        resumed = true;
++        armed = false;
++        pausedAt = 0;
 +        try {
 +            msm.addOnActiveSessionsChangedListener(sessions, listener);
 +        } catch (SecurityException e) {
@@ -1352,12 +1379,22 @@ index 00000000..738c7e1b
 +        PlaybackState s = c == null ? null : c.getPlaybackState();
 +        MediaMetadata m = c == null ? null : c.getMetadata();
 +        handler.removeCallbacks(recheck);
-+        boolean show = s != null && m != null && isPlaying();
-+        if (s != null && m != null && s.getState() == PlaybackState.STATE_PAUSED) {
-+            // The state's update time is when it paused: stay a while, then leave Home.
-+            long left = HIDE_PAUSED_MS - (android.os.SystemClock.elapsedRealtime() - s.getLastPositionUpdateTime());
++        // Shown only for music the user left playing: armed when Home sees it playing, never for a session that was
++        // already paused (or stale) when Home came up. After a pause it stays HIDE_PAUSED_MS, then disarms.
++        boolean playing = s != null && m != null && isPlaying();
++        boolean show = playing;
++        if (playing) {
++            armed = true;
++            pausedAt = 0;
++        } else if (armed && s != null && m != null && s.getState() == PlaybackState.STATE_PAUSED) {
++            long now = android.os.SystemClock.elapsedRealtime();
++            if (pausedAt == 0) pausedAt = now;
++            long left = HIDE_PAUSED_MS - (now - pausedAt);
 +            show = left > 0;
 +            if (show && resumed) handler.postDelayed(recheck, left + 500);
++            else armed = false;
++        } else {
++            armed = false;
 +        }
 +        shown = show;
 +        handler.removeCallbacks(poll);
@@ -1630,10 +1667,10 @@ index 00000000..371d4e48
 +}
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/WeatherLine.java b/launcher/app/src/main/java/com/gathin/tvhome/WeatherLine.java
 new file mode 100644
-index 00000000..91c3908d
+index 00000000..071a25cc
 --- /dev/null
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/WeatherLine.java
-@@ -0,0 +1,181 @@
+@@ -0,0 +1,221 @@
 +package com.gathin.tvhome;
 +
 +import android.os.Handler;
@@ -1667,6 +1704,7 @@ index 00000000..91c3908d
 +    private final Handler handler = new Handler(Looper.getMainLooper());
 +    /** Last answer, kept across Home being rebuilt (settings, theme, screensaver) so the line never pops in late. */
 +    private static String lastText;
++    private static int lastCode = -1;
 +    private static long fetchedAt;
 +    /** The next hours, as "08 h", symbol, "16°", for the Down panel; empty until the first answer. */
 +    private static volatile java.util.List<String[]> hourly = java.util.Collections.emptyList();
@@ -1704,6 +1742,7 @@ index 00000000..91c3908d
 +        // focus highlight that was already placed.
 +        if (lastText != null) {
 +            view.setText(lastText);
++            setIcon(view, icon ? lastCode : -1, 0xA6FFFFFF, 15);
 +            view.setVisibility(View.VISIBLE);
 +        } else {
 +            view.setText(" ");
@@ -1733,6 +1772,7 @@ index 00000000..91c3908d
 +                lat, lon);
 +        NET.execute(() -> {
 +            String text = null;
++            int code = -1;
 +            HttpURLConnection c = null;
 +            try {
 +                c = (HttpURLConnection) new URL(url).openConnection();
@@ -1747,8 +1787,8 @@ index 00000000..91c3908d
 +                    }
 +                    JSONObject cur = new JSONObject(out.toString("UTF-8")).getJSONObject("current");
 +                    long temp = Math.round(cur.getDouble("temperature_2m"));
-+                    String sym = icon ? symbol(cur.optInt("weather_code", -1)) : "";
-+                    text = (sym.isEmpty() ? "" : sym + "  ") + temp + "°";
++                    code = cur.optInt("weather_code", -1);
++                    text = temp + "°";
 +                    JSONObject h = new JSONObject(out.toString("UTF-8")).optJSONObject("hourly");
 +                    if (h != null) {
 +                        org.json.JSONArray times = h.getJSONArray("time");
@@ -1759,7 +1799,7 @@ index 00000000..91c3908d
 +                        for (int k = 1; k < times.length() && next.size() < 6; k++) {   // 0 is the current hour
 +                            String t = times.getString(k);   // 2026-10-27T08:00, local time
 +                            String hour = t.length() >= 13 ? t.substring(11, 13) + " h" : t;
-+                            next.add(new String[]{hour, symbol(codes.optInt(k, -1)), Math.round(temps.getDouble(k)) + "°", rain(rains, k)});
++                            next.add(new String[]{hour, String.valueOf(codes.optInt(k, -1)), Math.round(temps.getDouble(k)) + "°", rain(rains, k)});
 +                        }
 +                        hourly = next;
 +                    }
@@ -1780,7 +1820,7 @@ index 00000000..91c3908d
 +                                        .getDisplayName(java.time.format.TextStyle.SHORT, Locale.getDefault()).replace(".", "");
 +                                name = name.substring(0, 1).toUpperCase(Locale.getDefault()) + name.substring(1);
 +                            }
-+                            next.add(new String[]{name, symbol(dc.optInt(k, -1)), Math.round(hi.getDouble(k)) + "°",
++                            next.add(new String[]{name, String.valueOf(dc.optInt(k, -1)), Math.round(hi.getDouble(k)) + "°",
 +                                    Math.round(lo.getDouble(k)) + "°", rain(dr, k)});
 +                        }
 +                        daily = next;
@@ -1792,17 +1832,54 @@ index 00000000..91c3908d
 +                if (c != null) c.disconnect();
 +            }
 +            final String shown = text;
++            final int shownCode = code;
 +            handler.post(() -> {
 +                if (shown == null) return;
 +                fetchedAt = SystemClock.elapsedRealtime();
 +                lastText = shown;
++                lastCode = shownCode;
 +                view.setText(shown);
++                setIcon(view, icon ? shownCode : -1, 0xA6FFFFFF, 15);
 +                view.setVisibility(View.VISIBLE);
 +            });
 +        });
 +    }
 +
-+    /** WMO weather code to a small text symbol (monochrome where the font allows). */
++    /** WMO weather code to one of the line icons drawn for this build (0 when unknown). */
++    static int iconFor(int code) {
++        if (code < 0) return 0;
++        if (code <= 1) return R.drawable.ic_wx_sun;
++        if (code == 2) return R.drawable.ic_wx_cloud_sun;
++        if (code == 3) return R.drawable.ic_wx_cloud;
++        if (code == 45 || code == 48) return R.drawable.ic_wx_fog;
++        if (code >= 71 && code <= 77 || code == 85 || code == 86) return R.drawable.ic_wx_snow;
++        if (code >= 95) return R.drawable.ic_wx_storm;
++        if (code >= 51) return R.drawable.ic_wx_rain;
++        return R.drawable.ic_wx_cloud;
++    }
++
++    static int iconFor(String code) {
++        try {
++            return iconFor(Integer.parseInt(code));
++        } catch (Exception e) {
++            return 0;
++        }
++    }
++
++    /** Puts the weather icon before the text, tinted like it, sizeDp tall; none when code is unknown. */
++    static void setIcon(TextView v, int code, int color, int sizeDp) {
++        int res = iconFor(code);
++        android.graphics.drawable.Drawable d = res == 0 ? null : v.getContext().getDrawable(res);
++        if (d != null) {
++            d = d.mutate();
++            d.setTint(color);
++            int px = Math.round(sizeDp * v.getResources().getDisplayMetrics().density);
++            d.setBounds(0, 0, px, px);
++            v.setCompoundDrawablePadding(Math.round(6 * v.getResources().getDisplayMetrics().density));
++        }
++        v.setCompoundDrawablesRelative(d, null, null, null);
++    }
++
 +    static String symbol(int code) {
 +        if (code < 0) return "";
 +        if (code <= 1) return "☀︎";
@@ -1832,57 +1909,286 @@ index 00000000..4513b57d
 +    <item android:width="112dp" android:height="80dp" android:gravity="center"
 +        android:drawable="@drawable/ic_yt_play" />
 +</layer-list>
+diff --git a/launcher/app/src/main/res/drawable/ic_ethernet.xml b/launcher/app/src/main/res/drawable/ic_ethernet.xml
+index 90a77221..b844db3e 100644
+--- a/launcher/app/src/main/res/drawable/ic_ethernet.xml
++++ b/launcher/app/src/main/res/drawable/ic_ethernet.xml
+@@ -1,7 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
+ <vector xmlns:android="http://schemas.android.com/apk/res/android"
+     android:width="22dp" android:height="22dp"
+     android:viewportWidth="24" android:viewportHeight="24">
+-    <path android:fillColor="#FFFFFFFF"
+-        android:pathData="M7.77,6.76L6.23,5.48 0.82,12l5.41,6.52 1.54,-1.28L3.42,12l4.35,-5.24zM7,13h2v-2L7,11v2zM17,11h-2v2h2v-2zM11,13h2v-2h-2v2zM17.77,5.48l-1.54,1.28L20.58,12l-4.35,5.24 1.54,1.28L23.18,12l-5.41,-6.52z" />
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M6.5,4.5h11a1.5,1.5 0 0,1 1.5,1.5v9h-14v-9a1.5,1.5 0 0,1 1.5,-1.5z M8.5,15v3h7v-3 M9,8v2.5 M12,8v2.5 M15,8v2.5" />
+ </vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_home_settings_pill.xml b/launcher/app/src/main/res/drawable/ic_home_settings_pill.xml
+index bc506de5..5e40f1a5 100644
+--- a/launcher/app/src/main/res/drawable/ic_home_settings_pill.xml
++++ b/launcher/app/src/main/res/drawable/ic_home_settings_pill.xml
+@@ -1,7 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
+ <vector xmlns:android="http://schemas.android.com/apk/res/android"
+     android:width="22dp" android:height="22dp"
+     android:viewportWidth="24" android:viewportHeight="24">
+-    <path android:fillColor="#FFFFFFFF"
+-        android:pathData="M12,3L2,12H5V21H10V15H14V21H19V12H22Z" />
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M4,10.5L12,4l8,6.5 M6,9v9.5a1.5,1.5 0 0,0 1.5,1.5h3v-5h3v5h3a1.5,1.5 0 0,0 1.5,-1.5V9" />
+ </vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_input.xml b/launcher/app/src/main/res/drawable/ic_input.xml
+index d679293e..9bc086f5 100644
+--- a/launcher/app/src/main/res/drawable/ic_input.xml
++++ b/launcher/app/src/main/res/drawable/ic_input.xml
+@@ -1,7 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
+ <vector xmlns:android="http://schemas.android.com/apk/res/android"
+     android:width="22dp" android:height="22dp"
+     android:viewportWidth="24" android:viewportHeight="24">
+-    <path android:fillColor="#FFFFFFFF"
+-        android:pathData="M18,7V4c0,-1.1 -0.9,-2 -2,-2H8C6.9,2 6,2.9 6,4v3H5v6l3,6v3h8v-3l3,-6V7H18zM8,4h8v3h-2V5h-1v2h-2V5h-1v2H8V4z" />
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M3.5,5.5h17a1.5,1.5 0 0,1 1.5,1.5v9a1.5,1.5 0 0,1 -1.5,1.5h-17a1.5,1.5 0 0,1 -1.5,-1.5v-9a1.5,1.5 0 0,1 1.5,-1.5z M8.5,20.5h7 M9.5,11.5h5 M12.5,9.5l2,2l-2,2" />
+ </vector>
 diff --git a/launcher/app/src/main/res/drawable/ic_np_next.xml b/launcher/app/src/main/res/drawable/ic_np_next.xml
 new file mode 100644
-index 00000000..ccce849a
+index 00000000..630d0037
 --- /dev/null
 +++ b/launcher/app/src/main/res/drawable/ic_np_next.xml
 @@ -0,0 +1,7 @@
 +<?xml version="1.0" encoding="utf-8"?>
-+<!-- Local addition: media control icon for the now-playing card. -->
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
 +<vector xmlns:android="http://schemas.android.com/apk/res/android"
 +    android:width="22dp" android:height="22dp"
 +    android:viewportWidth="24" android:viewportHeight="24">
-+    <path android:fillColor="#FFFFFFFF" android:pathData="M6,18l8.5,-6L6,6v12zM16,6v12h2V6h-2z" />
++    <path android:fillColor="#FFFFFFFF" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.2" android:strokeLineJoin="round" android:pathData="M4.5,7v10c0,0.6 0.65,0.95 1.15,0.6l6.85,-5c0.4,-0.3 0.4,-0.9 0,-1.2l-6.85,-5c-0.5,-0.35 -1.15,0 -1.15,0.6z M12,7v10c0,0.6 0.65,0.95 1.15,0.6l6.85,-5c0.4,-0.3 0.4,-0.9 0,-1.2l-6.85,-5c-0.5,-0.35 -1.15,0 -1.15,0.6z" />
 +</vector>
 diff --git a/launcher/app/src/main/res/drawable/ic_np_pause.xml b/launcher/app/src/main/res/drawable/ic_np_pause.xml
 new file mode 100644
-index 00000000..fc500757
+index 00000000..eb171e67
 --- /dev/null
 +++ b/launcher/app/src/main/res/drawable/ic_np_pause.xml
 @@ -0,0 +1,7 @@
 +<?xml version="1.0" encoding="utf-8"?>
-+<!-- Local addition: media control icon for the now-playing card. -->
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
 +<vector xmlns:android="http://schemas.android.com/apk/res/android"
 +    android:width="22dp" android:height="22dp"
 +    android:viewportWidth="24" android:viewportHeight="24">
-+    <path android:fillColor="#FFFFFFFF" android:pathData="M6,19h4V5H6v14zM14,5v14h4V5h-4z" />
++    <path android:fillColor="#FFFFFFFF" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineJoin="round" android:pathData="M7.5,5.5h2.6v13h-2.6z M13.9,5.5h2.6v13h-2.6z" />
 +</vector>
 diff --git a/launcher/app/src/main/res/drawable/ic_np_play.xml b/launcher/app/src/main/res/drawable/ic_np_play.xml
 new file mode 100644
-index 00000000..62ba7550
+index 00000000..0dac1ddf
 --- /dev/null
 +++ b/launcher/app/src/main/res/drawable/ic_np_play.xml
 @@ -0,0 +1,7 @@
 +<?xml version="1.0" encoding="utf-8"?>
-+<!-- Local addition: media control icon for the now-playing card. -->
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
 +<vector xmlns:android="http://schemas.android.com/apk/res/android"
 +    android:width="22dp" android:height="22dp"
 +    android:viewportWidth="24" android:viewportHeight="24">
-+    <path android:fillColor="#FFFFFFFF" android:pathData="M8,5v14l11,-7z" />
++    <path android:fillColor="#FFFFFFFF" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.6" android:strokeLineJoin="round" android:pathData="M8.5,6.2v11.6c0,0.8 0.85,1.25 1.5,0.8l8.6,-5.8c0.6,-0.4 0.6,-1.2 0,-1.6l-8.6,-5.8c-0.65,-0.45 -1.5,0 -1.5,0.8z" />
 +</vector>
 diff --git a/launcher/app/src/main/res/drawable/ic_np_prev.xml b/launcher/app/src/main/res/drawable/ic_np_prev.xml
 new file mode 100644
-index 00000000..70baf24a
+index 00000000..e3406898
 --- /dev/null
 +++ b/launcher/app/src/main/res/drawable/ic_np_prev.xml
 @@ -0,0 +1,7 @@
 +<?xml version="1.0" encoding="utf-8"?>
-+<!-- Local addition: media control icon for the now-playing card. -->
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
 +<vector xmlns:android="http://schemas.android.com/apk/res/android"
 +    android:width="22dp" android:height="22dp"
 +    android:viewportWidth="24" android:viewportHeight="24">
-+    <path android:fillColor="#FFFFFFFF" android:pathData="M6,6h2v12H6zM9.5,12l8.5,6V6z" />
++    <path android:fillColor="#FFFFFFFF" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.2" android:strokeLineJoin="round" android:pathData="M19.5,7v10c0,0.6 -0.65,0.95 -1.15,0.6l-6.85,-5c-0.4,-0.3 -0.4,-0.9 0,-1.2l6.85,-5c0.5,-0.35 1.15,0 1.15,0.6z M12,7v10c0,0.6 -0.65,0.95 -1.15,0.6l-6.85,-5c-0.4,-0.3 -0.4,-0.9 0,-1.2l6.85,-5c0.5,-0.35 1.15,0 1.15,0.6z" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_settings.xml b/launcher/app/src/main/res/drawable/ic_settings.xml
+index 376889dc..73a540a6 100644
+--- a/launcher/app/src/main/res/drawable/ic_settings.xml
++++ b/launcher/app/src/main/res/drawable/ic_settings.xml
+@@ -1,7 +1,8 @@
+ <?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
+ <vector xmlns:android="http://schemas.android.com/apk/res/android"
+     android:width="22dp" android:height="22dp"
+     android:viewportWidth="24" android:viewportHeight="24">
+-    <path android:fillColor="#FFFFFFFF"
+-        android:pathData="M19.14,12.94c0.04,-0.3 0.06,-0.61 0.06,-0.94c0,-0.32 -0.02,-0.64 -0.07,-0.94l2.03,-1.58c0.18,-0.14 0.23,-0.41 0.12,-0.61l-1.92,-3.32c-0.12,-0.22 -0.37,-0.29 -0.59,-0.22l-2.39,0.96c-0.5,-0.38 -1.03,-0.7 -1.62,-0.94L14.4,2.81c-0.04,-0.24 -0.24,-0.41 -0.48,-0.41h-3.84c-0.24,0 -0.43,0.17 -0.47,0.41L9.25,5.35C8.66,5.59 8.12,5.92 7.63,6.29L5.24,5.33c-0.22,-0.08 -0.47,0 -0.59,0.22L2.74,8.87C2.62,9.08 2.66,9.34 2.86,9.48l2.03,1.58C4.84,11.36 4.8,11.69 4.8,12s0.02,0.64 0.07,0.94l-2.03,1.58c-0.18,0.14 -0.23,0.41 -0.12,0.61l1.92,3.32c0.12,0.22 0.37,0.29 0.59,0.22l2.39,-0.96c0.5,0.38 1.03,0.7 1.62,0.94l0.36,2.54c0.05,0.24 0.24,0.41 0.48,0.41h3.84c0.24,0 0.44,-0.17 0.47,-0.41l0.36,-2.54c0.59,-0.24 1.13,-0.56 1.62,-0.94l2.39,0.96c0.22,0.08 0.47,0 0.59,-0.22l1.92,-3.32c0.12,-0.22 0.07,-0.47 -0.12,-0.61L19.14,12.94zM12,15.6c-1.98,0 -3.6,-1.62 -3.6,-3.6s1.62,-3.6 3.6,-3.6s3.6,1.62 3.6,3.6S13.98,15.6 12,15.6z" />
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.6" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M20.71,9.05 L21.18,11.39 L18.98,12.46 L18.63,14.24 L20.25,16.08 L18.92,18.06 L16.61,17.27 L15.10,18.28 L14.95,20.71 L12.61,21.18 L11.54,18.98 L9.76,18.63 L7.92,20.25 L5.94,18.92 L6.73,16.61 L5.72,15.10 L3.29,14.95 L2.82,12.61 L5.02,11.54 L5.37,9.76 L3.75,7.92 L5.08,5.94 L7.39,6.73 L8.90,5.72 L9.05,3.29 L11.39,2.82 L12.46,5.02 L14.24,5.37 L16.08,3.75 L18.06,5.08 L17.27,7.39 L18.28,8.90Z" />
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.6" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M8.9,12a3.1,3.1 0 1,1 6.2,0a3.1,3.1 0 1,1 -6.2,0z" />
+ </vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_tv_apps.xml b/launcher/app/src/main/res/drawable/ic_tv_apps.xml
+new file mode 100644
+index 00000000..a0ba4230
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_tv_apps.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="22dp" android:height="22dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M5.5,4h3.5a1.5,1.5 0 0,1 1.5,1.5v3.5a1.5,1.5 0 0,1 -1.5,1.5h-3.5a1.5,1.5 0 0,1 -1.5,-1.5v-3.5a1.5,1.5 0 0,1 1.5,-1.5z M15,4h3.5a1.5,1.5 0 0,1 1.5,1.5v3.5a1.5,1.5 0 0,1 -1.5,1.5h-3.5a1.5,1.5 0 0,1 -1.5,-1.5v-3.5a1.5,1.5 0 0,1 1.5,-1.5z M5.5,13.5h3.5a1.5,1.5 0 0,1 1.5,1.5v3.5a1.5,1.5 0 0,1 -1.5,1.5h-3.5a1.5,1.5 0 0,1 -1.5,-1.5v-3.5a1.5,1.5 0 0,1 1.5,-1.5z M15,13.5h3.5a1.5,1.5 0 0,1 1.5,1.5v3.5a1.5,1.5 0 0,1 -1.5,1.5h-3.5a1.5,1.5 0 0,1 -1.5,-1.5v-3.5a1.5,1.5 0 0,1 1.5,-1.5z" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_tv_chevron.xml b/launcher/app/src/main/res/drawable/ic_tv_chevron.xml
+new file mode 100644
+index 00000000..b4ba8464
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_tv_chevron.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="16dp" android:height="16dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.0" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M9.5,6.5l5,5.5l-5,5.5" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_tv_search.xml b/launcher/app/src/main/res/drawable/ic_tv_search.xml
+new file mode 100644
+index 00000000..bd4eb433
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_tv_search.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="22dp" android:height="22dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.0" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M4.2,10.5a6.3,6.3 0 1,1 12.6,0a6.3,6.3 0 1,1 -12.6,0z M15.2,15.2L20.5,20.5" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_tv_usb.xml b/launcher/app/src/main/res/drawable/ic_tv_usb.xml
+new file mode 100644
+index 00000000..a2028eb6
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_tv_usb.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="22dp" android:height="22dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M8.5,10.5h7a1.5,1.5 0 0,1 1.5,1.5v7.5a2,2 0 0,1 -2,2h-6a2,2 0 0,1 -2,-2v-7.5a1.5,1.5 0 0,1 1.5,-1.5z M9.5,10.5v-7h5v7 M11,6.5h0.01 M13,6.5h0.01" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_wifi.xml b/launcher/app/src/main/res/drawable/ic_wifi.xml
+index ecc3c8c0..76ee5bab 100644
+--- a/launcher/app/src/main/res/drawable/ic_wifi.xml
++++ b/launcher/app/src/main/res/drawable/ic_wifi.xml
+@@ -1,7 +1,8 @@
+ <?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
+ <vector xmlns:android="http://schemas.android.com/apk/res/android"
+     android:width="22dp" android:height="22dp"
+     android:viewportWidth="24" android:viewportHeight="24">
+-    <path android:fillColor="#FFFFFFFF"
+-        android:pathData="M1,9l2,2c4.97,-4.97 13.03,-4.97 18,0l2,-2C16.93,2.93 7.08,2.93 1,9zM9,17l3,3 3,-3c-1.65,-1.66 -4.34,-1.66 -6,0zM5,13l2,2c2.76,-2.76 7.24,-2.76 10,0l2,-2C15.14,9.14 8.87,9.14 5,13z" />
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M3.5,9.5a12,12 0 0,1 17,0 M6.6,12.6a7.6,7.6 0 0,1 10.8,0 M9.6,15.6a3.4,3.4 0 0,1 4.8,0" />
++    <path android:fillColor="#FFFFFFFF" android:strokeColor="#FFFFFFFF" android:strokeWidth="0.5" android:strokeLineJoin="round" android:pathData="M10.9,18.7a1.1,1.1 0 1,1 2.2,0a1.1,1.1 0 1,1 -2.2,0z" />
+ </vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_wx_cloud.xml b/launcher/app/src/main/res/drawable/ic_wx_cloud.xml
+new file mode 100644
+index 00000000..f4143c46
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_wx_cloud.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="18dp" android:height="18dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M7.2,18.5h9.8a3.7,3.7 0 0,0 0.4,-7.38a5.3,5.3 0 0,0 -10.24,1.08a3.2,3.2 0 0,0 0.04,6.3z" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_wx_cloud_sun.xml b/launcher/app/src/main/res/drawable/ic_wx_cloud_sun.xml
+new file mode 100644
+index 00000000..58fda345
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_wx_cloud_sun.xml
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="18dp" android:height="18dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M5.6,10.2a3.2,3.2 0 0,1 5.6,-3.1 M4.10,8.50L2.60,8.50 M5.39,5.39L4.33,4.33 M8.50,4.10L8.50,2.60 M11.61,5.39L12.67,4.33" />
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M8.2,19.5h8.6a3.2,3.2 0 0,0 0.35,-6.38a4.6,4.6 0 0,0 -8.9,0.95a2.8,2.8 0 0,0 -0.05,5.43z" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_wx_drop.xml b/launcher/app/src/main/res/drawable/ic_wx_drop.xml
+new file mode 100644
+index 00000000..dd38e6c6
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_wx_drop.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="12dp" android:height="12dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.2" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M12,3.5C9,7.5 6.5,10.6 6.5,14a5.5,5.5 0 0,0 11,0C17.5,10.6 15,7.5 12,3.5z" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_wx_fog.xml b/launcher/app/src/main/res/drawable/ic_wx_fog.xml
+new file mode 100644
+index 00000000..7f4ce571
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_wx_fog.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="18dp" android:height="18dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M4,9h16 M6,12.5h12 M4,16h16 M8,19.5h8" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_wx_rain.xml b/launcher/app/src/main/res/drawable/ic_wx_rain.xml
+new file mode 100644
+index 00000000..5a61fbff
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_wx_rain.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="18dp" android:height="18dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M7.2,15h9.8a3.7,3.7 0 0,0 0.4,-7.38a5.3,5.3 0 0,0 -10.24,1.08a3.2,3.2 0 0,0 0.04,6.3z M8.5,18l-1,2.5 M12,18l-1,2.5 M15.5,18l-1,2.5" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_wx_snow.xml b/launcher/app/src/main/res/drawable/ic_wx_snow.xml
+new file mode 100644
+index 00000000..944ae4bb
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_wx_snow.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="18dp" android:height="18dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.4" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M7.2,15h9.8a3.7,3.7 0 0,0 0.4,-7.38a5.3,5.3 0 0,0 -10.24,1.08a3.2,3.2 0 0,0 0.04,6.3z M8.5,19h0.01 M12,20.5h0.01 M15.5,19h0.01" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_wx_storm.xml b/launcher/app/src/main/res/drawable/ic_wx_storm.xml
+new file mode 100644
+index 00000000..888d1519
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_wx_storm.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="18dp" android:height="18dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M7.2,15h9.8a3.7,3.7 0 0,0 0.4,-7.38a5.3,5.3 0 0,0 -10.24,1.08a3.2,3.2 0 0,0 0.04,6.3z M12.5,16.5l-2,3h3l-2,3" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_wx_sun.xml b/launcher/app/src/main/res/drawable/ic_wx_sun.xml
+new file mode 100644
+index 00000000..174804ed
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_wx_sun.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="18dp" android:height="18dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M8,12a4,4 0 1,1 8,0a4,4 0 1,1 -8,0z M18.60,12.00L20.80,12.00 M16.67,16.67L18.22,18.22 M12.00,18.60L12.00,20.80 M7.33,16.67L5.78,18.22 M5.40,12.00L3.20,12.00 M7.33,7.33L5.78,5.78 M12.00,5.40L12.00,3.20 M16.67,7.33L18.22,5.78" />
 +</vector>
 diff --git a/launcher/app/src/main/res/drawable/ic_yt_play.xml b/launcher/app/src/main/res/drawable/ic_yt_play.xml
 new file mode 100644
@@ -1947,7 +2253,7 @@ index c037d247..d559849e 100644
                          <TextView
                              android:id="@+id/lunarDate"
 diff --git a/launcher/app/src/main/res/values-es/strings.xml b/launcher/app/src/main/res/values-es/strings.xml
-index e3244921..a7094f7a 100644
+index e3244921..a72c1665 100644
 --- a/launcher/app/src/main/res/values-es/strings.xml
 +++ b/launcher/app/src/main/res/values-es/strings.xml
 @@ -46,6 +46,8 @@
@@ -1964,14 +2270,14 @@ index e3244921..a7094f7a 100644
      <string name="race_countdown_days">%1$dd %2$dh</string>
      <string name="last_opened">Abierta por última vez %1$s</string>
 +    <string name="down_drawer_title">Recientes</string>
-+    <string name="down_drawer_search">🔍  Buscar</string>
-+    <string name="down_drawer_all_apps">⊞  Todas las apps</string>
++    <string name="down_drawer_search">Buscar</string>
++    <string name="down_drawer_all_apps">Todas las apps</string>
 +    <string name="down_drawer_forecast">Próximas horas</string>
 +    <string name="down_drawer_empty">Las apps que abras van a aparecer acá</string>
-+    <string name="forecast_by_hour">Por hora  ▸</string>
-+    <string name="forecast_by_day">Por día  ▸</string>
++    <string name="forecast_by_hour">Por hora</string>
++    <string name="forecast_by_day">Por día</string>
 +    <string name="forecast_today">Hoy</string>
-+    <string name="down_drawer_usb">💾  USB</string>
++    <string name="down_drawer_usb">USB</string>
 +    <string name="now_playing_on">Sonando en %1$s</string>
 +    <string name="now_paused_on">En pausa · %1$s</string>
 +    <string name="media_pause">Pausar</string>
@@ -2016,7 +2322,7 @@ index c963338f..2e69a305 100644
           label, caption and glow colour, once you answer Show on the prompt. false: never look for cards or ask. -->
      <bool name="module_cards">true</bool>
 diff --git a/launcher/app/src/main/res/values/strings.xml b/launcher/app/src/main/res/values/strings.xml
-index ca006552..cd3868eb 100644
+index ca006552..f27f1507 100644
 --- a/launcher/app/src/main/res/values/strings.xml
 +++ b/launcher/app/src/main/res/values/strings.xml
 @@ -58,6 +58,8 @@
@@ -2033,14 +2339,14 @@ index ca006552..cd3868eb 100644
           last opened, e.g. "5 minutes ago" or "yesterday, 9:40 pm". -->
      <string name="last_opened">Last opened %1$s</string>
 +    <string name="down_drawer_title">Recent</string>
-+    <string name="down_drawer_search">🔍  Search</string>
-+    <string name="down_drawer_all_apps">⊞  All apps</string>
++    <string name="down_drawer_search">Buscar</string>
++    <string name="down_drawer_all_apps">Todas las apps</string>
 +    <string name="down_drawer_forecast">Next hours</string>
 +    <string name="down_drawer_empty">Apps you open will show here</string>
-+    <string name="forecast_by_hour">By hour  ▸</string>
-+    <string name="forecast_by_day">By day  ▸</string>
++    <string name="forecast_by_hour">Por hora</string>
++    <string name="forecast_by_day">Por día</string>
 +    <string name="forecast_today">Today</string>
-+    <string name="down_drawer_usb">💾  USB</string>
++    <string name="down_drawer_usb">USB</string>
 +    <string name="now_playing_on">Playing on %1$s</string>
 +    <string name="now_paused_on">Paused · %1$s</string>
 +    <string name="media_pause">Pause</string>
