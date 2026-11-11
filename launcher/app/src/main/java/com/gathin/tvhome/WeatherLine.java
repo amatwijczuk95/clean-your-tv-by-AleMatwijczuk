@@ -31,6 +31,7 @@ final class WeatherLine {
     private final Handler handler = new Handler(Looper.getMainLooper());
     /** Last answer, kept across Home being rebuilt (settings, theme, screensaver) so the line never pops in late. */
     private static String lastText;
+    private static int lastCode = -1;
     private static long fetchedAt;
     /** The next hours, as "08 h", symbol, "16°", for the Down panel; empty until the first answer. */
     private static volatile java.util.List<String[]> hourly = java.util.Collections.emptyList();
@@ -68,6 +69,7 @@ final class WeatherLine {
         // focus highlight that was already placed.
         if (lastText != null) {
             view.setText(lastText);
+            setIcon(view, icon ? lastCode : -1, 0xA6FFFFFF, 15);
             view.setVisibility(View.VISIBLE);
         } else {
             view.setText(" ");
@@ -97,6 +99,7 @@ final class WeatherLine {
                 lat, lon);
         NET.execute(() -> {
             String text = null;
+            int code = -1;
             HttpURLConnection c = null;
             try {
                 c = (HttpURLConnection) new URL(url).openConnection();
@@ -111,8 +114,8 @@ final class WeatherLine {
                     }
                     JSONObject cur = new JSONObject(out.toString("UTF-8")).getJSONObject("current");
                     long temp = Math.round(cur.getDouble("temperature_2m"));
-                    String sym = icon ? symbol(cur.optInt("weather_code", -1)) : "";
-                    text = (sym.isEmpty() ? "" : sym + "  ") + temp + "°";
+                    code = cur.optInt("weather_code", -1);
+                    text = temp + "°";
                     JSONObject h = new JSONObject(out.toString("UTF-8")).optJSONObject("hourly");
                     if (h != null) {
                         org.json.JSONArray times = h.getJSONArray("time");
@@ -123,7 +126,7 @@ final class WeatherLine {
                         for (int k = 1; k < times.length() && next.size() < 6; k++) {   // 0 is the current hour
                             String t = times.getString(k);   // 2026-10-27T08:00, local time
                             String hour = t.length() >= 13 ? t.substring(11, 13) + " h" : t;
-                            next.add(new String[]{hour, symbol(codes.optInt(k, -1)), Math.round(temps.getDouble(k)) + "°", rain(rains, k)});
+                            next.add(new String[]{hour, String.valueOf(codes.optInt(k, -1)), Math.round(temps.getDouble(k)) + "°", rain(rains, k)});
                         }
                         hourly = next;
                     }
@@ -144,7 +147,7 @@ final class WeatherLine {
                                         .getDisplayName(java.time.format.TextStyle.SHORT, Locale.getDefault()).replace(".", "");
                                 name = name.substring(0, 1).toUpperCase(Locale.getDefault()) + name.substring(1);
                             }
-                            next.add(new String[]{name, symbol(dc.optInt(k, -1)), Math.round(hi.getDouble(k)) + "°",
+                            next.add(new String[]{name, String.valueOf(dc.optInt(k, -1)), Math.round(hi.getDouble(k)) + "°",
                                     Math.round(lo.getDouble(k)) + "°", rain(dr, k)});
                         }
                         daily = next;
@@ -156,17 +159,54 @@ final class WeatherLine {
                 if (c != null) c.disconnect();
             }
             final String shown = text;
+            final int shownCode = code;
             handler.post(() -> {
                 if (shown == null) return;
                 fetchedAt = SystemClock.elapsedRealtime();
                 lastText = shown;
+                lastCode = shownCode;
                 view.setText(shown);
+                setIcon(view, icon ? shownCode : -1, 0xA6FFFFFF, 15);
                 view.setVisibility(View.VISIBLE);
             });
         });
     }
 
-    /** WMO weather code to a small text symbol (monochrome where the font allows). */
+    /** WMO weather code to one of the line icons drawn for this build (0 when unknown). */
+    static int iconFor(int code) {
+        if (code < 0) return 0;
+        if (code <= 1) return R.drawable.ic_wx_sun;
+        if (code == 2) return R.drawable.ic_wx_cloud_sun;
+        if (code == 3) return R.drawable.ic_wx_cloud;
+        if (code == 45 || code == 48) return R.drawable.ic_wx_fog;
+        if (code >= 71 && code <= 77 || code == 85 || code == 86) return R.drawable.ic_wx_snow;
+        if (code >= 95) return R.drawable.ic_wx_storm;
+        if (code >= 51) return R.drawable.ic_wx_rain;
+        return R.drawable.ic_wx_cloud;
+    }
+
+    static int iconFor(String code) {
+        try {
+            return iconFor(Integer.parseInt(code));
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /** Puts the weather icon before the text, tinted like it, sizeDp tall; none when code is unknown. */
+    static void setIcon(TextView v, int code, int color, int sizeDp) {
+        int res = iconFor(code);
+        android.graphics.drawable.Drawable d = res == 0 ? null : v.getContext().getDrawable(res);
+        if (d != null) {
+            d = d.mutate();
+            d.setTint(color);
+            int px = Math.round(sizeDp * v.getResources().getDisplayMetrics().density);
+            d.setBounds(0, 0, px, px);
+            v.setCompoundDrawablePadding(Math.round(6 * v.getResources().getDisplayMetrics().density));
+        }
+        v.setCompoundDrawablesRelative(d, null, null, null);
+    }
+
     static String symbol(int code) {
         if (code < 0) return "";
         if (code <= 1) return "☀︎";

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="22dp" android:height="22dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M8.5,10.5h7a1.5,1.5 0 0,1 1.5,1.5v7.5a2,2 0 0,1 -2,2h-6a2,2 0 0,1 -2,-2v-7.5a1.5,1.5 0 0,1 1.5,-1.5z M9.5,10.5v-7h5v7 M11,6.5h0.01 M13,6.5h0.01" />
+</vector>

@@ -272,22 +272,22 @@ final class DownDrawer {
     private void fill() {
         fillForecast();
         row.removeAllViews();
-        row.addView(pill(activity.getString(R.string.down_drawer_search), v -> openSearch()));
+        row.addView(iconPill(R.drawable.ic_tv_search, activity.getString(R.string.down_drawer_search), v -> openSearch(), 128));
         Intent usb = usbIntent();
         if (usb != null) {
-            row.addView(pill(activity.getString(R.string.down_drawer_usb), v -> {
+            row.addView(iconPill(R.drawable.ic_tv_usb, activity.getString(R.string.down_drawer_usb), v -> {
                 close(false);
                 try {
                     activity.startActivity(usb);
                 } catch (Exception ignored) {
                     // the player went away meanwhile
                 }
-            }));
+            }, 112));
         }
-        row.addView(pill(activity.getString(R.string.down_drawer_all_apps), v -> {
+        row.addView(iconPill(R.drawable.ic_tv_apps, activity.getString(R.string.down_drawer_all_apps), v -> {
             close(false);
             host.openLibrary();
-        }));
+        }, 168));
         long now = System.currentTimeMillis();
         List<Integer> order = new ArrayList<>();
         for (int i = 0; i < host.dockCount(); i++) {
@@ -317,6 +317,15 @@ final class DownDrawer {
         }
         forecast.setVisibility(View.VISIBLE);
         toggle.setText(byDay ? R.string.forecast_by_day : R.string.forecast_by_hour);
+        android.graphics.drawable.Drawable chev = activity.getDrawable(R.drawable.ic_tv_chevron);
+        if (chev != null) {
+            chev = chev.mutate();
+            chev.setTint(0xD9FFFFFF);
+            int px = Math.round(13 * dp);
+            chev.setBounds(0, 0, px, px);
+            toggle.setCompoundDrawablesRelative(null, null, chev, null);
+            toggle.setCompoundDrawablePadding(Math.round(6 * dp));
+        }
         columns.removeAllViews();
         for (String[] it : items) {
             LinearLayout col = new LinearLayout(activity);
@@ -325,8 +334,9 @@ final class DownDrawer {
             col.setMinimumWidth(Math.round((byDay ? 94 : 66) * dp));
             col.setPadding(Math.round(2 * dp), 0, Math.round(2 * dp), 0);
             col.addView(text(it[0], 12f, 0x99FFFFFF));
-            String main = (it[1].isEmpty() ? "" : it[1] + " ") + it[2] + (byDay ? "  " : "");
+            String main = it[2] + (byDay ? "  " : "");
             TextView big = text(main, byDay ? 15f : 16f, 0xF2FFFFFF);
+            WeatherLine.setIcon(big, WeatherLine.iconFor(it[1]) == 0 ? -1 : Integer.parseInt(it[1]), 0xF2FFFFFF, 16);
             if (byDay) {
                 android.text.SpannableString sp = new android.text.SpannableString(main + it[3]);
                 sp.setSpan(new android.text.style.ForegroundColorSpan(0x80FFFFFF), main.length(), sp.length(), 0);
@@ -334,7 +344,19 @@ final class DownDrawer {
             }
             col.addView(big);
             String r = byDay ? it[4] : it[3];
-            col.addView(text(r.isEmpty() ? " " : "☂︎ " + r, 11f, 0xCC8EC9FF));
+            TextView rain = text(r.isEmpty() ? " " : r, 11f, 0xCC8EC9FF);
+            if (!r.isEmpty()) {
+                android.graphics.drawable.Drawable drop = activity.getDrawable(R.drawable.ic_wx_drop);
+                if (drop != null) {
+                    drop = drop.mutate();
+                    drop.setTint(0xCC8EC9FF);
+                    int px = Math.round(10 * dp);
+                    drop.setBounds(0, 0, px, px);
+                    rain.setCompoundDrawablesRelative(drop, null, null, null);
+                    rain.setCompoundDrawablePadding(Math.round(3 * dp));
+                }
+            }
+            col.addView(rain);
             columns.addView(col);
         }
     }

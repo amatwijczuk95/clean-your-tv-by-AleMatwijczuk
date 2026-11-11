@@ -155,14 +155,14 @@
          last opened, e.g. "5 minutes ago" or "yesterday, 9:40 pm". -->
     <string name="last_opened">Last opened %1$s</string>
     <string name="down_drawer_title">Recent</string>
-    <string name="down_drawer_search">🔍  Search</string>
-    <string name="down_drawer_all_apps">⊞  All apps</string>
+    <string name="down_drawer_search">Buscar</string>
+    <string name="down_drawer_all_apps">Todas las apps</string>
     <string name="down_drawer_forecast">Next hours</string>
     <string name="down_drawer_empty">Apps you open will show here</string>
-    <string name="forecast_by_hour">By hour  ▸</string>
-    <string name="forecast_by_day">By day  ▸</string>
+    <string name="forecast_by_hour">Por hora</string>
+    <string name="forecast_by_day">Por día</string>
     <string name="forecast_today">Today</string>
-    <string name="down_drawer_usb">💾  USB</string>
+    <string name="down_drawer_usb">USB</string>
     <string name="now_playing_on">Playing on %1$s</string>
     <string name="now_paused_on">Paused · %1$s</string>
     <string name="media_pause">Pause</string>

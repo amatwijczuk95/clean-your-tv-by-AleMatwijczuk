@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Local addition: media control icon for the now-playing card. -->
+<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="22dp" android:height="22dp"
     android:viewportWidth="24" android:viewportHeight="24">
-    <path android:fillColor="#FFFFFFFF" android:pathData="M6,6h2v12H6zM9.5,12l8.5,6V6z" />
+    <path android:fillColor="#FFFFFFFF" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.2" android:strokeLineJoin="round" android:pathData="M19.5,7v10c0,0.6 -0.65,0.95 -1.15,0.6l-6.85,-5c-0.4,-0.3 -0.4,-0.9 0,-1.2l6.85,-5c0.5,-0.35 1.15,0 1.15,0.6z M12,7v10c0,0.6 -0.65,0.95 -1.15,0.6l-6.85,-5c-0.4,-0.3 -0.4,-0.9 0,-1.2l6.85,-5c0.5,-0.35 1.15,0 1.15,0.6z" />
 </vector>

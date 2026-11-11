@@ -56,6 +56,9 @@ final class NowPlaying {
     private FocusHost focusHost;
     private long lastCommand;
     private boolean shown;
+    /** Something played while Home was up (or as it came up); only then may a paused player stay on Home. */
+    private boolean armed;
+    private long pausedAt;
     private int returnTo;
 
     private final Context ctx;
@@ -226,6 +229,8 @@ final class NowPlaying {
 
     void resume() {
         resumed = true;
+        armed = false;
+        pausedAt = 0;
         try {
             msm.addOnActiveSessionsChangedListener(sessions, listener);
         } catch (SecurityException e) {
@@ -282,12 +287,22 @@ final class NowPlaying {
         PlaybackState s = c == null ? null : c.getPlaybackState();
         MediaMetadata m = c == null ? null : c.getMetadata();
         handler.removeCallbacks(recheck);
-        boolean show = s != null && m != null && isPlaying();
-        if (s != null && m != null && s.getState() == PlaybackState.STATE_PAUSED) {
-            // The state's update time is when it paused: stay a while, then leave Home.
-            long left = HIDE_PAUSED_MS - (android.os.SystemClock.elapsedRealtime() - s.getLastPositionUpdateTime());
+        // Shown only for music the user left playing: armed when Home sees it playing, never for a session that was
+        // already paused (or stale) when Home came up. After a pause it stays HIDE_PAUSED_MS, then disarms.
+        boolean playing = s != null && m != null && isPlaying();
+        boolean show = playing;
+        if (playing) {
+            armed = true;
+            pausedAt = 0;
+        } else if (armed && s != null && m != null && s.getState() == PlaybackState.STATE_PAUSED) {
+            long now = android.os.SystemClock.elapsedRealtime();
+            if (pausedAt == 0) pausedAt = now;
+            long left = HIDE_PAUSED_MS - (now - pausedAt);
             show = left > 0;
             if (show && resumed) handler.postDelayed(recheck, left + 500);
+            else armed = false;
+        } else {
+            armed = false;
         }
         shown = show;
         handler.removeCallbacks(poll);
