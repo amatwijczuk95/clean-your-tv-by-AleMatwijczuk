@@ -4,7 +4,10 @@ Esta es mi versión (de AleMatwijczuk) de [CleanYourTV](https://github.com/Gathi
 colaboradores), con estos agregados:
 
 - **Videos de fondo** que rotan cada 5 minutos, más oscuros de noche, con opción Sí/No en Ajustes del launcher (⌂).
-  Son 6 videos gratuitos de [Mixkit](https://mixkit.co/) (licencia libre de Mixkit), dentro del launcher.
+  Son 12 videos gratuitos de [Mixkit](https://mixkit.co/) (licencia libre de Mixkit), dentro del launcher (~50 MB):
+  cascada en el bosque, olas en la playa, atardecer en playa tranquila, vuelo sobre montañas, lluvia sobre un lago,
+  lago al atardecer, vuelo sobre bahía soleada, bahía turquesa desde arriba, luna sobre bosque nevado,
+  sol entre los árboles, lluvia en bosque nuboso y atardecer naranja en la playa.
 - **Temperatura** debajo de la fecha (Open-Meteo, sin cuenta; solo se envían las coordenadas de la ciudad).
 - **Panel ↓**: al apretar abajo desde el dock aparece el pronóstico (por hora / por día), "Buscar" (búsqueda
   universal de Google TV), "Todas las apps" y "Recientes" (apps usadas en los últimos 14 días y hace cuánto).
