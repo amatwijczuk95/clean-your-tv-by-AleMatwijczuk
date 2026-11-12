@@ -38,7 +38,7 @@
   "wallpaper": false,
   "sky_intensity": 0,
   "ambient_glow": true,
-  "app_glow": true,
+  "app_glow": false,
   "dock_glass": true,
   "dock_even_padding": true,
   "icon_only_buttons": true,
@@ -91,5 +91,8 @@
   "library_ok_opens": true,
   "dock_only": true,
   "advanced_effects": true,
-  "now_playing": true
+  "now_playing": true,
+  "show_greeting": false,
+  "search_button": false,
+  "sleep_timer": true
 }

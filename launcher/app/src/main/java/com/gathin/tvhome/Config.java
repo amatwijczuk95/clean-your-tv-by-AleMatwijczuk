@@ -84,6 +84,8 @@ final class Config {
     boolean dockOnly;
     /** Local addition: the now-playing card and controls (theme "now_playing"). */
     boolean nowPlaying;
+    /** Local additions: the Search pill in the Down panel ("search_button") and the sleep timer ("sleep_timer"). */
+    boolean searchButton = true, sleepTimer;
     final String liveTvPackage;
     final String liveTvAction;
     final String liveTvInputId;
@@ -705,6 +707,8 @@ final class Config {
             config.downDrawer = bool(json, "down_drawer", false);
             config.dockOnly = bool(json, "dock_only", false);
             config.nowPlaying = bool(json, "now_playing", false);
+            config.searchButton = bool(json, "search_button", true);
+            config.sleepTimer = bool(json, "sleep_timer", false);
         }
         if (json != null) config.videoRotationMinutes = integer(json, "video_rotation_minutes", 5, 1, 240);
         return config;

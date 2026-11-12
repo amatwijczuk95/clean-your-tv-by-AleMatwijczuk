@@ -257,5 +257,7 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+        <!-- Local addition: the sleep timer's alarm. -->
+        <receiver android:name=".SleepTimer$Receiver" android:exported="false" />
     </application>
 </manifest>

@@ -355,6 +355,13 @@ public class HomeKeyService extends AccessibilityService {
     }
 
     /** The settings menu offers Restart only while this helper is bound: it opens the system power menu. */
+    /** Local addition (sleep timer): the system's sleep action through this service; false when it is not bound. */
+    static boolean sleepNow() {
+        HomeKeyService s = running;
+        if (s == null || android.os.Build.VERSION.SDK_INT < 28) return false;
+        return s.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN);
+    }
+
     static boolean canOpenPowerMenu() {
         return running != null;
     }

@@ -160,4 +160,7 @@
     <string name="media_pause">Pausar</string>
     <string name="media_play">Reproducir</string>
     <string name="now_playing_service">Inicio: reproduciendo ahora</string>
+    <string name="sleep_off">Apagar: no</string>
+    <string name="sleep_in">Apagar en %1$d min</string>
+    <string name="sleep_line">%1$d min</string>
 </resources>

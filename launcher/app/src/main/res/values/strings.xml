@@ -168,4 +168,7 @@
     <string name="media_pause">Pause</string>
     <string name="media_play">Play</string>
     <string name="now_playing_service">Home: now playing</string>
+    <string name="sleep_off">Sleep: off</string>
+    <string name="sleep_in">Sleep in %1$d min</string>
+    <string name="sleep_line">%1$d min</string>
 </resources>

@@ -39,6 +39,10 @@ final class DownDrawer {
         void focusDock(int position);
         /** Open the App library (every installed app). */
         void openLibrary();
+        boolean showSearch();
+        boolean sleepTimer();
+        /** The sleep timer changed: refresh its line on Home. */
+        void sleepChanged();
         boolean mediaActive();
         boolean mediaPlaying();
         void mediaPlayPause();
@@ -272,7 +276,9 @@ final class DownDrawer {
     private void fill() {
         fillForecast();
         row.removeAllViews();
-        row.addView(iconPill(R.drawable.ic_tv_search, activity.getString(R.string.down_drawer_search), v -> openSearch(), 128));
+        if (host.showSearch()) {
+            row.addView(iconPill(R.drawable.ic_tv_search, activity.getString(R.string.down_drawer_search), v -> openSearch(), 128));
+        }
         Intent usb = usbIntent();
         if (usb != null) {
             row.addView(iconPill(R.drawable.ic_tv_usb, activity.getString(R.string.down_drawer_usb), v -> {
@@ -288,6 +294,16 @@ final class DownDrawer {
             close(false);
             host.openLibrary();
         }, 168));
+        if (host.sleepTimer()) {
+            TextView sleep = iconPill(R.drawable.ic_tv_sleep, sleepLabel(SleepTimer.minutesLeft(activity)), null, 176);
+            sleep.setOnClickListener(v -> {
+                int m = SleepTimer.next(activity);
+                SleepTimer.set(activity, m);
+                ((TextView) v).setText(sleepLabel(m));
+                host.sleepChanged();
+            });
+            row.addView(sleep);
+        }
         long now = System.currentTimeMillis();
         List<Integer> order = new ArrayList<>();
         for (int i = 0; i < host.dockCount(); i++) {
@@ -390,6 +406,10 @@ final class DownDrawer {
         android.graphics.drawable.Drawable d = activity.getDrawable(icon);
         if (d != null) d.setTint(0xF2FFFFFF);
         v.setCompoundDrawablesRelativeWithIntrinsicBounds(d, null, null, null);
+    }
+
+    private String sleepLabel(int minutes) {
+        return minutes <= 0 ? activity.getString(R.string.sleep_off) : activity.getString(R.string.sleep_in, minutes);
     }
 
     private String playLabel(boolean playing) {

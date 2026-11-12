@@ -272,20 +272,40 @@
                             android:letterSpacing="0.14"
                             android:textAllCaps="true" />
 
-                        <!-- Local addition: outdoor temperature (theme weather_lat / weather_lon), hidden until known. -->
-                        <TextView
-                            android:id="@+id/weatherLine"
-                            android:gravity="left"
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:singleLine="true"
-                            android:textColor="#A6FFFFFF"
-                            android:textSize="14sp"
-                            android:fontFamily="@string/font_regular"
-                            android:letterSpacing="0.14"
-                            android:includeFontPadding="false"
-                            android:visibility="gone" />
+                            android:orientation="horizontal">
+                            <!-- Local addition: outdoor temperature (theme weather_lat / weather_lon), hidden until known. -->
+                            <TextView
+                                android:id="@+id/weatherLine"
+                                android:gravity="left"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:singleLine="true"
+                                android:textColor="#A6FFFFFF"
+                                android:textSize="14sp"
+                                android:fontFamily="@string/font_regular"
+                                android:letterSpacing="0.14"
+                                android:includeFontPadding="false"
+                                android:visibility="gone" />
+
+                            <!-- Local addition: sleep timer countdown, beside the temperature. -->
+                            <TextView
+                                android:id="@+id/sleepLine"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:layout_marginStart="18dp"
+                                android:singleLine="true"
+                                android:textColor="#A6FFFFFF"
+                                android:textSize="14sp"
+                                android:fontFamily="@string/font_regular"
+                                android:letterSpacing="0.14"
+                                android:includeFontPadding="false"
+                                android:visibility="gone" />
+                        </LinearLayout>
 
                         <!-- Lunar date ("Lunar 13/9 · Year of the Horse"), shown when lunar_date is on. -->
                         <TextView

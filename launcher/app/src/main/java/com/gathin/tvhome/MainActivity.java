@@ -299,6 +299,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private WeatherLine weatherLine;
     private DownDrawer downDrawer;
     private NowPlaying nowPlaying;
+    private boolean searchButton = true, sleepTimerOn;
+    private TextView sleepLine;
     private boolean appLibrarySelection;
     private boolean libraryOkOpens;
     private boolean libraryFocusPending;
@@ -383,6 +385,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (festive) updateWifiLabel();
             sky.update();
             wallpaperPlayer.update();
+            updateSleepLine();
             handler.postDelayed(this, MINUTE_MS);
         }
     };
@@ -459,6 +462,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         hero = findViewById(R.id.hero);
         if (cfg.downDrawer) downDrawer = new DownDrawer(this, root, downHost);
         if (cfg.nowPlaying) nowPlaying = new NowPlaying(this, root);
+        searchButton = cfg.searchButton;
+        sleepTimerOn = cfg.sleepTimer;
+        sleepLine = findViewById(R.id.sleepLine);
         // The hero is now a group (name, and the cinematic lines): without this every fade of the default
         // shelf would render it through an offscreen buffer first, as the glow above notes.
         hero.forceHasOverlappingRendering(false);
@@ -958,6 +964,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (videoBackdrop != null) videoBackdrop.start();
         if (weatherLine != null) weatherLine.resume();
         if (nowPlaying != null) nowPlaying.resume();
+        updateSleepLine();
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1759,6 +1766,27 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         });
     }
 
+    /** Local addition: "☾ 25 min" after the temperature while a sleep timer runs; hidden otherwise. */
+    private void updateSleepLine() {
+        if (sleepLine == null) return;
+        int m = sleepTimerOn ? SleepTimer.minutesLeft(this) : 0;
+        if (m <= 0) {
+            sleepLine.setVisibility(View.GONE);
+            return;
+        }
+        sleepLine.setText(getString(R.string.sleep_line, m));
+        android.graphics.drawable.Drawable d = getDrawable(R.drawable.ic_tv_sleep);
+        if (d != null) {
+            d = d.mutate();
+            d.setTint(0xA6FFFFFF);
+            int px = Math.round(14 * density);
+            d.setBounds(0, 0, px, px);
+            sleepLine.setCompoundDrawablesRelative(d, null, null, null);
+            sleepLine.setCompoundDrawablePadding(Math.round(5 * density));
+        }
+        sleepLine.setVisibility(View.VISIBLE);
+    }
+
     /** Local addition: what the now-playing card needs from Home. */
     private final NowPlaying.FocusHost nowPlayingHost = new NowPlaying.FocusHost() {
         @Override public int dockFocus() {
@@ -1816,6 +1844,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
         @Override public void openLibrary() { onLibraryRequested(); }
+        @Override public boolean showSearch() { return searchButton; }
+        @Override public boolean sleepTimer() { return sleepTimerOn; }
+        @Override public void sleepChanged() { updateSleepLine(); }
         @Override public boolean mediaActive() { return nowPlaying != null && nowPlaying.active(); }
         @Override public boolean mediaPlaying() { return nowPlaying != null && nowPlaying.isPlaying(); }
         @Override public void mediaPlayPause() { if (nowPlaying != null) nowPlaying.playPause(); }
