@@ -301,6 +301,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private NowPlaying nowPlaying;
     private boolean searchButton = true, sleepTimerOn;
     private TextView sleepLine;
+    private View branding;
+    private static final float BRANDING_ALPHA = 0.6f;
     private boolean appLibrarySelection;
     private boolean libraryOkOpens;
     private boolean libraryFocusPending;
@@ -465,6 +467,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         searchButton = cfg.searchButton;
         sleepTimerOn = cfg.sleepTimer;
         sleepLine = findViewById(R.id.sleepLine);
+        if (cfg.branding) addBranding();
         // The hero is now a group (name, and the cinematic lines): without this every fade of the default
         // shelf would render it through an offscreen buffer first, as the glow above notes.
         hero.forceHasOverlappingRendering(false);
@@ -1766,6 +1769,38 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         });
     }
 
+    /** "powered by" and the Blexx Solutions logo, small in the bottom-right corner; never focusable. */
+    private void addBranding() {
+        android.widget.LinearLayout mark = new android.widget.LinearLayout(this);
+        mark.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        mark.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        mark.setFocusable(false);
+        mark.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        TextView by = new TextView(this);
+        by.setText(R.string.powered_by);
+        by.setTextColor(0xFFFFFFFF);
+        by.setTextSize(10f);
+        by.setLetterSpacing(0.16f);
+        by.setAllCaps(true);
+        by.setIncludeFontPadding(false);
+        by.setPadding(0, 0, Math.round(8 * density), 0);
+        mark.addView(by);
+        android.widget.ImageView logo = new android.widget.ImageView(this);
+        logo.setImageResource(R.drawable.blexx_logo);
+        logo.setAdjustViewBounds(true);
+        logo.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        int h = Math.round(24 * density);
+        mark.addView(logo, new android.widget.LinearLayout.LayoutParams(Math.round(h * 190f / 83f), h));
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.Gravity.BOTTOM | android.view.Gravity.END);
+        lp.rightMargin = Math.round(28 * density);
+        lp.bottomMargin = Math.round(14 * density);
+        mark.setAlpha(BRANDING_ALPHA);
+        root.addView(mark, lp);
+        branding = mark;
+    }
+
     /** Local addition: "☾ 25 min" after the temperature while a sleep timer runs; hidden otherwise. */
     private void updateSleepLine() {
         if (sleepLine == null) return;
@@ -1816,6 +1851,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         @Override public void launchAt(int p) { adapter.launchAt(p); }
         @Override public void slideHome(float dy, boolean open) {
             if (nowPlaying != null) nowPlaying.setHidden(open);
+            if (branding != null) branding.animate().alpha(open ? 0f : BRANDING_ALPHA).setDuration(DownDrawer.ms(200)).start();
             if (open) {
                 hideGlass();
                 // Never slide the dock over the clock and date: stop just under the header.

@@ -1,5 +1,14 @@
 # Clean Your TV by AleMatwijczuk
 
+<p align="center">
+  <b>Clean Your TV by AleMatwijczuk</b> · powered by<br>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/blexx_logo_white.png">
+    <img src="assets/blexx_logo_original.jpg" alt="Blexx Solutions" height="48">
+  </picture>
+</p>
+
+
 Esta es mi versión (de AleMatwijczuk) de [CleanYourTV](https://github.com/Gathin23/cleanyourtv) (licencia MIT, créditos a su autor y
 colaboradores), con estos agregados:
 

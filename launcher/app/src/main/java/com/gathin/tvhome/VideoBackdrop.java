@@ -16,20 +16,111 @@ import java.util.List;
 
 /**
  * Local experiment (theme key "video_wallpaper"): muted videos behind Home, from res/raw/bg_video_1, _2, ...
- * Each clip loops until video_rotation_minutes have passed, then the next one (shuffled) starts. Only one
- * player exists at a time, and only while Home is in front: stop() releases it so no decoder is held while an
- * app runs. Between clips the last frame stays on screen until the next one is ready, so there is no flash.
+ * Two stacked layers make the loop seamless: about 2.5 s before a clip ends the other layer prepares the same clip
+ * from its start (or the next clip, shuffled, once video_rotation_minutes have passed) and cross-fades over it, so
+ * there is never a hard restart. At most two players exist, and the old one is released as soon as the fade ends;
+ * stop() releases both, so no decoder is held while an app runs. If the second player cannot start (a decoder
+ * busy elsewhere), the clip simply restarts on the same layer, as before.
  */
-final class VideoBackdrop implements TextureView.SurfaceTextureListener {
+final class VideoBackdrop {
+    private static final long PREPARE_BEFORE_END_MS = 2500;
+    private static final long FADE_MS = 1500;
+
+    /** One video layer: a TextureView and, while it plays, its player. */
+    private final class Slot implements TextureView.SurfaceTextureListener {
+        final TextureView view;
+        MediaPlayer player;
+        Surface surface;
+        boolean prepared;
+
+        Slot() {
+            view = new TextureView(ctx);
+            view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            view.setSurfaceTextureListener(this);
+        }
+
+        boolean available() {
+            return view.isAvailable();
+        }
+
+        /** Starts clip res on this layer; onReady runs once it plays (onFail when it cannot). */
+        void play(int res, Runnable onReady, Runnable onFail) {
+            release();
+            if (!view.isAvailable()) {
+                if (onFail != null) onFail.run();
+                return;
+            }
+            try {
+                surface = new Surface(view.getSurfaceTexture());
+                player = new MediaPlayer();
+                player.setSurface(surface);
+                player.setVolume(0f, 0f);
+                player.setOnPreparedListener(mp -> {
+                    if (mp != player) return;
+                    prepared = true;
+                    mp.setVolume(0f, 0f);
+                    mp.start();
+                    if (onReady != null) onReady.run();
+                });
+                player.setOnErrorListener((mp, what, extra) -> {
+                    if (mp == player) {
+                        release();
+                        if (onFail != null) onFail.run();
+                    }
+                    return true;
+                });
+                player.setOnCompletionListener(mp -> {
+                    // Reached the end without a cross-fade (the other layer failed): restart here, as before.
+                    if (mp == player && this == front && !crossing) {
+                        mp.seekTo(0);
+                        mp.start();
+                    }
+                });
+                player.setDataSource(ctx, Uri.parse("android.resource://" + ctx.getPackageName() + "/" + res));
+                player.prepareAsync();
+            } catch (Exception e) {
+                release();
+                if (onFail != null) onFail.run();
+            }
+        }
+
+        void release() {
+            prepared = false;
+            if (player != null) {
+                try {
+                    player.release();
+                } catch (Exception ignored) {
+                    // already gone
+                }
+                player = null;
+            }
+            if (surface != null) {
+                surface.release();
+                surface = null;
+            }
+        }
+
+        @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int w, int h) {
+            if (wanted && this == front && player == null) startFront();
+        }
+
+        @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
+            release();
+            return true;
+        }
+
+        @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int w, int h) { }
+        @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) { }
+    }
+
     private final Context ctx;
-    private final TextureView view;
     private final List<Integer> clips = new ArrayList<>();
     private final long rotationMs;
     private int index;
     private long clipStarted;
-    private MediaPlayer player;
-    private Surface surface;
-    private boolean wanted;
+    private boolean wanted, crossing;
+    private final Slot bottom, top;
+    private Slot front;
     private final View shade;
     private final int dayDim, eveningDim, nightDim;
     private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
@@ -37,6 +128,13 @@ final class VideoBackdrop implements TextureView.SurfaceTextureListener {
         @Override public void run() {
             updateDim(true);
             handler.postDelayed(this, 60_000L);
+        }
+    };
+    private final Runnable watch = new Runnable() {
+        @Override public void run() {
+            if (!wanted) return;
+            checkLoop();
+            handler.postDelayed(this, 250);
         }
     };
 
@@ -49,18 +147,21 @@ final class VideoBackdrop implements TextureView.SurfaceTextureListener {
             clips.add(id);
         }
         Collections.shuffle(clips);
-        view = new TextureView(ctx);
-        view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        view.setSurfaceTextureListener(this);
-        root.addView(view, 0, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
+        bottom = new Slot();
+        top = new Slot();
+        ViewGroup.LayoutParams full = new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT);
+        root.addView(bottom.view, 0, full);
+        root.addView(top.view, 1, new ViewGroup.LayoutParams(full));
+        top.view.setAlpha(0f);
+        front = bottom;
         this.dayDim = dimPercent;
         this.eveningDim = eveningDim;
         this.nightDim = nightDim;
         shade = new View(ctx);
         shade.setBackgroundColor(android.graphics.Color.BLACK);
         shade.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        root.addView(shade, 1, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+        root.addView(shade, 2, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
         updateDim(false);
     }
@@ -90,78 +191,80 @@ final class VideoBackdrop implements TextureView.SurfaceTextureListener {
         updateDim(false);
         handler.removeCallbacks(dimTick);
         handler.postDelayed(dimTick, 60_000L);
-        if (player == null && view.isAvailable()) open(view.getSurfaceTexture());
+        if (front.player == null && front.available()) startFront();
+        handler.removeCallbacks(watch);
+        handler.postDelayed(watch, 250);
     }
 
     void stop() {
         wanted = false;
+        crossing = false;
         handler.removeCallbacks(dimTick);
-        if (player != null) {
-            player.release();
-            player = null;
-        }
-        if (surface != null) {
-            surface.release();
-            surface = null;
-        }
+        handler.removeCallbacks(watch);
+        top.view.animate().cancel();
+        bottom.view.animate().cancel();
+        bottom.release();
+        top.release();
     }
 
-    private void open(SurfaceTexture texture) {
+    /** The clip to play next: the same one, or the next once its rotation time is up. */
+    private int nextClip() {
+        long now = SystemClock.elapsedRealtime();
+        if (clipStarted == 0) {
+            clipStarted = now;
+        } else if (now - clipStarted >= rotationMs && clips.size() > 1) {
+            index = (index + 1) % clips.size();
+            clipStarted = now;
+        }
+        return clips.get(index);
+    }
+
+    private void startFront() {
         if (clips.isEmpty()) return;
+        Slot other = front == top ? bottom : top;
+        other.release();
+        front.view.setAlpha(1f);
+        other.view.setAlpha(front == bottom ? 0f : 1f);
+        front.play(nextClip(), null, null);
+    }
+
+    /** Near the end of the clip on screen, start the other layer and fade between them. */
+    private void checkLoop() {
+        MediaPlayer p = front.player;
+        if (crossing || p == null || !front.prepared) return;
+        int dur, pos;
         try {
-            surface = new Surface(texture);
-            player = new MediaPlayer();
-            player.setSurface(surface);
-            player.setOnPreparedListener(mp -> {
-                mp.setVolume(0f, 0f);
-                mp.start();
-            });
-            player.setOnCompletionListener(mp -> {
-                if (SystemClock.elapsedRealtime() - clipStarted >= rotationMs && clips.size() > 1) {
-                    index = (index + 1) % clips.size();
-                    load();
-                } else {
-                    mp.seekTo(0);
-                    mp.start();
-                }
-            });
-            player.setOnErrorListener((mp, what, extra) -> { stop(); return true; });
-            if (clipStarted == 0 || SystemClock.elapsedRealtime() - clipStarted >= rotationMs) {
-                if (clipStarted != 0) index = (index + 1) % clips.size();
-                clipStarted = 0;
-            }
-            load();
+            dur = p.getDuration();
+            pos = p.getCurrentPosition();
         } catch (Exception e) {
-            stop();
+            return;
+        }
+        if (dur <= 0 || dur - pos > PREPARE_BEFORE_END_MS || dur < 2 * PREPARE_BEFORE_END_MS) return;
+        Slot back = front == top ? bottom : top;
+        if (!back.available()) return;
+        crossing = true;
+        back.play(nextClip(), () -> crossFade(back), () -> crossing = false);
+    }
+
+    private void crossFade(Slot incoming) {
+        if (!wanted) return;
+        Slot outgoing = front;
+        long fade = DownDrawer.ms(FADE_MS);
+        Runnable done = () -> {
+            outgoing.release();
+            front = incoming;
+            crossing = false;
+        };
+        if (incoming == top) {
+            // The new clip is on the upper layer: fade it in over the old one.
+            top.view.animate().cancel();
+            top.view.setAlpha(0f);
+            top.view.animate().alpha(1f).setDuration(fade).withEndAction(done).start();
+        } else {
+            // The new clip is underneath: show it and fade the old upper layer away.
+            bottom.view.setAlpha(1f);
+            top.view.animate().cancel();
+            top.view.animate().alpha(0f).setDuration(fade).withEndAction(done).start();
         }
     }
-
-    /** Points the player at the current clip; keeps clipStarted when resuming the same clip. */
-    private void load() {
-        try {
-            player.reset();
-            player.setSurface(surface);
-            player.setDataSource(ctx, Uri.parse("android.resource://" + ctx.getPackageName() + "/" + clips.get(index)));
-            if (clipStarted == 0 || SystemClock.elapsedRealtime() - clipStarted >= rotationMs) {
-                clipStarted = SystemClock.elapsedRealtime();
-            }
-            player.prepareAsync();
-        } catch (Exception e) {
-            stop();
-        }
-    }
-
-    @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int w, int h) {
-        if (wanted && player == null) open(texture);
-    }
-
-    @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
-        boolean keep = wanted;
-        stop();
-        wanted = keep;
-        return true;
-    }
-
-    @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int w, int h) { }
-    @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) { }
 }

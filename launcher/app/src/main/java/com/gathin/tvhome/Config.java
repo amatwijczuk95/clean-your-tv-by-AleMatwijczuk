@@ -86,6 +86,8 @@ final class Config {
     boolean nowPlaying;
     /** Local additions: the Search pill in the Down panel ("search_button") and the sleep timer ("sleep_timer"). */
     boolean searchButton = true, sleepTimer;
+    /** "powered by" Blexx Solutions watermark (theme "branding"); on by default. */
+    boolean branding = true;
     final String liveTvPackage;
     final String liveTvAction;
     final String liveTvInputId;
@@ -709,6 +711,7 @@ final class Config {
             config.nowPlaying = bool(json, "now_playing", false);
             config.searchButton = bool(json, "search_button", true);
             config.sleepTimer = bool(json, "sleep_timer", false);
+            config.branding = bool(json, "branding", true);
         }
         if (json != null) config.videoRotationMinutes = integer(json, "video_rotation_minutes", 5, 1, 240);
         return config;
