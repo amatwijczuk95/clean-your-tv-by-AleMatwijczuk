@@ -77,7 +77,7 @@ index e51092b3..bf20d54b 100644
          int toEnd = wrap(s.nightEnd - minute);
          if (toStart == 0) toStart = DAY_MINUTES;
 diff --git a/launcher/app/src/main/AndroidManifest.xml b/launcher/app/src/main/AndroidManifest.xml
-index 701b5feb..f6e9f4c9 100644
+index 701b5feb..b1012fcb 100644
 --- a/launcher/app/src/main/AndroidManifest.xml
 +++ b/launcher/app/src/main/AndroidManifest.xml
 @@ -8,6 +8,8 @@
@@ -89,7 +89,15 @@ index 701b5feb..f6e9f4c9 100644
      <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
      <!-- Needed since Android 10 to read the Wi-Fi network name for the network pill. Never requested at
           runtime: build-and-install grants it with pm grant, so lint's Android 12 "ask for COARSE with
-@@ -245,5 +247,17 @@
+@@ -102,6 +104,7 @@
+         <activity
+             android:name=".LauncherSettingsActivity"
+             android:exported="false"
++            android:theme="@style/Theme.TvHome.Panel"
+             android:excludeFromRecents="true"
+             android:screenOrientation="landscape" />
+         <!-- The system input switcher (com.android.tv.action.VIEW_INPUTS), which is what the remote's Input
+@@ -245,5 +248,17 @@
                  android:name="android.accessibilityservice"
                  android:resource="@xml/input_key_service" />
          </service>
@@ -1085,7 +1093,7 @@ index 233f9820..f1dd02a5 100644
          return running != null;
      }
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java
-index e4d1ab46..67f95383 100644
+index e4d1ab46..b40012a8 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java
 @@ -34,6 +34,8 @@ public final class LauncherSettingsActivity extends Activity {
@@ -1101,7 +1109,7 @@ index e4d1ab46..67f95383 100644
      @Override
      protected void onCreate(Bundle state) {
          super.onCreate(state);
-+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);   // local: soft entry
++        overridePendingTransition(R.anim.panel_in, 0);   // local: the menu slides in from the right
          setContentView(R.layout.activity_launcher_settings);
          choices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
          Config config = Config.load(this);
@@ -1142,7 +1150,7 @@ index e4d1ab46..67f95383 100644
          animationsChoice.setText(getString(R.string.animations_state,
                  getString(animations ? R.string.on : R.string.off)));
          advancedChoice.setText(getString(R.string.advanced_effects_state,
-@@ -315,4 +341,10 @@ public final class LauncherSettingsActivity extends Activity {
+@@ -315,4 +341,23 @@ public final class LauncherSettingsActivity extends Activity {
              Toast.makeText(this, R.string.not_available, Toast.LENGTH_LONG).show();
          }
      }
@@ -1150,7 +1158,20 @@ index e4d1ab46..67f95383 100644
 +    @Override
 +    public void finish() {
 +        super.finish();
-+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);   // local: soft exit
++        overridePendingTransition(0, R.anim.panel_out);   // local: and back out
++    }
++
++    /** Local: Left on a full-width row closes the menu, as on a TV; the size chips keep Left for themselves. */
++    @Override
++    public boolean dispatchKeyEvent(android.view.KeyEvent e) {
++        if (e.getKeyCode() == android.view.KeyEvent.KEYCODE_DPAD_LEFT && e.getAction() == android.view.KeyEvent.ACTION_DOWN) {
++            View f = getCurrentFocus();
++            if (f != null && f.getParent() == findViewById(R.id.settingsColumn)) {
++                finish();
++                return true;
++            }
++        }
++        return super.dispatchKeyEvent(e);
 +    }
  }
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
@@ -2429,6 +2450,41 @@ index 00000000..071a25cc
 +        return "";
 +    }
 +}
+diff --git a/launcher/app/src/main/res/anim/panel_in.xml b/launcher/app/src/main/res/anim/panel_in.xml
+new file mode 100644
+index 00000000..42ac2a2f
+--- /dev/null
++++ b/launcher/app/src/main/res/anim/panel_in.xml
+@@ -0,0 +1,5 @@
++<?xml version="1.0" encoding="utf-8"?>
++<set xmlns:android="http://schemas.android.com/apk/res/android" android:interpolator="@android:interpolator/decelerate_cubic">
++    <translate android:fromXDelta="40%" android:toXDelta="0%" android:duration="440" />
++    <alpha android:fromAlpha="0" android:toAlpha="1" android:duration="360" />
++</set>
+diff --git a/launcher/app/src/main/res/anim/panel_out.xml b/launcher/app/src/main/res/anim/panel_out.xml
+new file mode 100644
+index 00000000..603e9cc7
+--- /dev/null
++++ b/launcher/app/src/main/res/anim/panel_out.xml
+@@ -0,0 +1,5 @@
++<?xml version="1.0" encoding="utf-8"?>
++<set xmlns:android="http://schemas.android.com/apk/res/android" android:interpolator="@android:interpolator/accelerate_cubic">
++    <translate android:fromXDelta="0%" android:toXDelta="40%" android:duration="360" />
++    <alpha android:fromAlpha="1" android:toAlpha="0" android:duration="320" />
++</set>
+diff --git a/launcher/app/src/main/res/color/settings_text.xml b/launcher/app/src/main/res/color/settings_text.xml
+new file mode 100644
+index 00000000..81a6cf40
+--- /dev/null
++++ b/launcher/app/src/main/res/color/settings_text.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: TV menu rows, dark text on the white focus bar. -->
++<selector xmlns:android="http://schemas.android.com/apk/res/android">
++    <item android:state_focused="true" android:color="#FF111214" />
++    <item android:state_selected="true" android:color="#FFFFFFFF" />
++    <item android:color="#E6FFFFFF" />
++</selector>
 diff --git a/launcher/app/src/main/res/drawable/banner_youtube.xml b/launcher/app/src/main/res/drawable/banner_youtube.xml
 new file mode 100644
 index 00000000..4513b57d
@@ -2581,6 +2637,45 @@ index 00000000..b4ba8464
 +    android:viewportWidth="24" android:viewportHeight="24">
 +    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.0" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M9.5,6.5l5,5.5l-5,5.5" />
 +</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_tv_grid.xml b/launcher/app/src/main/res/drawable/ic_tv_grid.xml
+new file mode 100644
+index 00000000..67659a14
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_tv_grid.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="22dp" android:height="22dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M4,6h16 M4,12h16 M4,18h16 M9,4v16 M15,4v16" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_tv_image.xml b/launcher/app/src/main/res/drawable/ic_tv_image.xml
+new file mode 100644
+index 00000000..ce2cbe51
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_tv_image.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="22dp" android:height="22dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M5,4.5h14a1.5,1.5 0 0,1 1.5,1.5v12a1.5,1.5 0 0,1 -1.5,1.5h-14a1.5,1.5 0 0,1 -1.5,-1.5v-12a1.5,1.5 0 0,1 1.5,-1.5z M4,16l4.5,-4.5l3.5,3.5l3,-3l5,5 M15.5,8.5h0.01" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_tv_reset.xml b/launcher/app/src/main/res/drawable/ic_tv_reset.xml
+new file mode 100644
+index 00000000..48bda4a1
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_tv_reset.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="22dp" android:height="22dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M4.5,12a7.5,7.5 0 1,0 2.2,-5.3 M4.5,4.5v4h4" />
++</vector>
 diff --git a/launcher/app/src/main/res/drawable/ic_tv_search.xml b/launcher/app/src/main/res/drawable/ic_tv_search.xml
 new file mode 100644
 index 00000000..bd4eb433
@@ -2607,6 +2702,32 @@ index 00000000..d699febf
 +    android:viewportWidth="24" android:viewportHeight="24">
 +    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M19.5,14.6A8,8 0 0,1 9.4,4.5A8,8 0 1,0 19.5,14.6z" />
 +</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_tv_sparkle.xml b/launcher/app/src/main/res/drawable/ic_tv_sparkle.xml
+new file mode 100644
+index 00000000..e9d3e6f8
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_tv_sparkle.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="22dp" android:height="22dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M12,3.5l1.8,5.2l5.2,1.8l-5.2,1.8l-1.8,5.2l-1.8,-5.2l-5.2,-1.8l5.2,-1.8z M18.5,16v4 M16.5,18h4" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_tv_sun.xml b/launcher/app/src/main/res/drawable/ic_tv_sun.xml
+new file mode 100644
+index 00000000..d314f903
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_tv_sun.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="22dp" android:height="22dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M12,8a4,4 0 1,1 0,8a4,4 0 1,1 0,-8z M12,2.5v2 M12,19.5v2 M2.5,12h2 M19.5,12h2 M5.3,5.3l1.4,1.4 M17.3,17.3l1.4,1.4 M5.3,18.7l1.4,-1.4 M17.3,6.7l1.4,-1.4" />
++</vector>
 diff --git a/launcher/app/src/main/res/drawable/ic_tv_usb.xml b/launcher/app/src/main/res/drawable/ic_tv_usb.xml
 new file mode 100644
 index 00000000..a2028eb6
@@ -2619,6 +2740,19 @@ index 00000000..a2028eb6
 +    android:width="22dp" android:height="22dp"
 +    android:viewportWidth="24" android:viewportHeight="24">
 +    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M8.5,10.5h7a1.5,1.5 0 0,1 1.5,1.5v7.5a2,2 0 0,1 -2,2h-6a2,2 0 0,1 -2,-2v-7.5a1.5,1.5 0 0,1 1.5,-1.5z M9.5,10.5v-7h5v7 M11,6.5h0.01 M13,6.5h0.01" />
++</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_tv_video.xml b/launcher/app/src/main/res/drawable/ic_tv_video.xml
+new file mode 100644
+index 00000000..46eabd3a
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_tv_video.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local addition: tvOS-style line icon (drawn here, rounded strokes). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="22dp" android:height="22dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M5,5.5h14a1.5,1.5 0 0,1 1.5,1.5v10a1.5,1.5 0 0,1 -1.5,1.5h-14a1.5,1.5 0 0,1 -1.5,-1.5v-10a1.5,1.5 0 0,1 1.5,-1.5z M10.5,9.5v5l4,-2.5z" />
 +</vector>
 diff --git a/launcher/app/src/main/res/drawable/ic_wifi.xml b/launcher/app/src/main/res/drawable/ic_wifi.xml
 index ecc3c8c0..76ee5bab 100644
@@ -2755,27 +2889,303 @@ index 00000000..65328c09
 +        android:pathData="M27.4,3.1C27.1,1.9 26.1,0.9 24.9,0.6C22.7,0 14,0 14,0C14,0 5.3,0 3.1,0.6C1.9,0.9 0.9,1.9 0.6,3.1C0,5.3 0,10 0,10C0,10 0,14.7 0.6,16.9C0.9,18.1 1.9,19.1 3.1,19.4C5.3,20 14,20 14,20C14,20 22.7,20 24.9,19.4C26.1,19.1 27.1,18.1 27.4,16.9C28,14.7 28,10 28,10C28,10 28,5.3 27.4,3.1Z" />
 +    <path android:fillColor="#FFFFFFFF" android:pathData="M11.2,14.3L18.4,10L11.2,5.7Z" />
 +</vector>
+diff --git a/launcher/app/src/main/res/drawable/settings_choice_bg.xml b/launcher/app/src/main/res/drawable/settings_choice_bg.xml
+index 3539d96e..84678390 100644
+--- a/launcher/app/src/main/res/drawable/settings_choice_bg.xml
++++ b/launcher/app/src/main/res/drawable/settings_choice_bg.xml
+@@ -1,23 +1,22 @@
+ <?xml version="1.0" encoding="utf-8"?>
++<!-- Local: TV menu row, a white bar when focused, a quiet glass chip when selected, nothing otherwise. -->
+ <selector xmlns:android="http://schemas.android.com/apk/res/android">
+     <item android:state_focused="true">
+         <shape android:shape="rectangle">
+-            <solid android:color="#5574A987" />
+-            <corners android:radius="14dp" />
+-            <stroke android:width="2dp" android:color="#FFB9E7C7" />
++            <solid android:color="#F2FFFFFF" />
++            <corners android:radius="12dp" />
+         </shape>
+     </item>
+     <item android:state_selected="true">
+         <shape android:shape="rectangle">
+-            <solid android:color="#334DAE6D" />
+-            <corners android:radius="14dp" />
+-            <stroke android:width="1dp" android:color="#FF4DAE6D" />
++            <solid android:color="#40FFFFFF" />
++            <corners android:radius="12dp" />
+         </shape>
+     </item>
+     <item>
+         <shape android:shape="rectangle">
+-            <solid android:color="#FF242B34" />
+-            <corners android:radius="14dp" />
++            <solid android:color="#00000000" />
++            <corners android:radius="12dp" />
+         </shape>
+     </item>
+ </selector>
+diff --git a/launcher/app/src/main/res/drawable/settings_panel_bg.xml b/launcher/app/src/main/res/drawable/settings_panel_bg.xml
+new file mode 100644
+index 00000000..07c4e962
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/settings_panel_bg.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local: the menu panel, dark frosted glass with a rounded inner edge. -->
++<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
++    <gradient android:angle="0" android:startColor="#EB15181D" android:endColor="#F20C0E12" />
++    <corners android:topLeftRadius="28dp" android:bottomLeftRadius="28dp" />
++    <stroke android:width="1dp" android:color="#1FFFFFFF" />
++</shape>
 diff --git a/launcher/app/src/main/res/layout/activity_launcher_settings.xml b/launcher/app/src/main/res/layout/activity_launcher_settings.xml
-index b3de8647..09a15373 100644
+index b3de8647..5fe2f2ae 100644
 --- a/launcher/app/src/main/res/layout/activity_launcher_settings.xml
 +++ b/launcher/app/src/main/res/layout/activity_launcher_settings.xml
-@@ -93,6 +93,16 @@
-             style="@style/SettingsRow"
-             android:layout_marginTop="28dp" />
+@@ -1,154 +1,98 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
++<!-- Local: the launcher settings as a TV menu, a frosted panel on the right over the dimmed Home. -->
++<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+     android:layout_width="match_parent"
+-    android:layout_height="match_parent"
+-    android:background="#FF101419"
+-    android:fillViewport="true">
++    android:layout_height="match_parent">
  
-+        <TextView
-+            android:id="@+id/videoChoice"
-+            style="@style/SettingsRow"
-+            android:layout_marginTop="28dp" />
+-    <LinearLayout
+-        android:layout_width="match_parent"
+-        android:layout_height="wrap_content"
+-        android:orientation="vertical"
+-        android:paddingStart="72dp"
+-        android:paddingEnd="72dp"
+-        android:paddingTop="38dp"
+-        android:paddingBottom="38dp">
+-
+-        <TextView
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:text="@string/launcher_settings"
+-            android:textColor="#FFFFFFFF"
+-            android:textSize="34sp" />
+-
+-        <TextView
+-            android:id="@+id/reorderChoice"
+-            style="@style/SettingsRow"
+-            android:layout_marginTop="28dp"
+-            android:text="@string/reorder"
+-            android:visibility="gone" />
+-
+-        <TextView
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:layout_marginTop="28dp"
+-            android:text="@string/columns_label"
+-            android:textColor="#FFFFFFFF"
+-            android:textSize="20sp" />
+-
+-        <LinearLayout
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:layout_marginTop="10dp"
+-            android:orientation="horizontal">
+-
+-            <TextView android:id="@+id/columns4" style="@style/SettingsColumnChoice" android:text="4" />
+-            <TextView android:id="@+id/columns5" style="@style/SettingsColumnChoice" android:text="5" />
+-            <TextView android:id="@+id/columns6" style="@style/SettingsColumnChoice" android:text="6" />
+-            <TextView android:id="@+id/columns7" style="@style/SettingsColumnChoice" android:text="7" />
+-        </LinearLayout>
+-
+-        <TextView
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:layout_marginTop="18dp"
+-            android:text="@string/rows_below_dock_label"
+-            android:textColor="#FFFFFFFF"
+-            android:textSize="20sp" />
+-
+-        <LinearLayout
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:layout_marginTop="10dp"
+-            android:orientation="horizontal">
+-
+-            <TextView android:id="@+id/rows0" style="@style/SettingsColumnChoice" android:text="0" />
+-            <TextView android:id="@+id/rows1" style="@style/SettingsColumnChoice" android:text="1" />
+-            <TextView android:id="@+id/rows2" style="@style/SettingsColumnChoice" android:text="2" />
+-            <TextView android:id="@+id/rows3" style="@style/SettingsColumnChoice" android:text="3" />
+-        </LinearLayout>
+-
+-        <TextView
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:layout_marginTop="18dp"
+-            android:text="@string/dock_opacity_label"
+-            android:textColor="#FFFFFFFF"
+-            android:textSize="20sp" />
++    <ScrollView
++        android:id="@+id/settingsPanel"
++        android:layout_width="500dp"
++        android:layout_height="match_parent"
++        android:layout_gravity="end"
++        android:background="@drawable/settings_panel_bg"
++        android:scrollbars="none"
++        android:fillViewport="true">
+ 
+         <LinearLayout
++            android:id="@+id/settingsColumn"
+             android:layout_width="match_parent"
+             android:layout_height="wrap_content"
+-            android:layout_marginTop="10dp"
+-            android:orientation="horizontal">
+-
+-            <TextView android:id="@+id/dock100" style="@style/SettingsColumnChoice" android:text="100%" />
+-            <TextView android:id="@+id/dock70" style="@style/SettingsColumnChoice" android:text="70%" />
+-            <TextView android:id="@+id/dock50" style="@style/SettingsColumnChoice" android:text="50%" />
+-            <TextView android:id="@+id/dock30" style="@style/SettingsColumnChoice" android:text="30%" />
++            android:orientation="vertical"
++            android:paddingStart="28dp"
++            android:paddingEnd="28dp"
++            android:paddingTop="34dp"
++            android:paddingBottom="34dp">
 +
-+        <TextView
-+            android:id="@+id/nightBrightnessChoice"
-+            style="@style/SettingsRow"
-+            android:layout_marginTop="10dp" />
++            <TextView
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:paddingStart="16dp"
++                android:drawableStart="@drawable/ic_settings"
++                android:drawablePadding="14dp"
++                android:drawableTint="#FFFFFFFF"
++                android:gravity="center_vertical"
++                android:text="@string/launcher_settings"
++                android:textColor="#FFFFFFFF"
++                android:textSize="26sp"
++                android:fontFamily="@string/font_medium" />
 +
-         <TextView
-             android:id="@+id/animationsChoice"
-             style="@style/SettingsRow"
++            <TextView android:id="@+id/reorderChoice" style="@style/SettingsRow" android:drawableStart="@drawable/ic_swap_vert" android:text="@string/reorder" android:visibility="gone" />
++
++            <TextView style="@style/SettingsSection" android:text="@string/section_screen" />
++            <LinearLayout
++                android:layout_width="match_parent"
++                android:layout_height="54dp"
++                android:gravity="center_vertical"
++                android:paddingEnd="8dp"
++                android:orientation="horizontal">
++                <TextView style="@style/SettingsChoiceLabel" android:text="@string/columns_label" android:drawableStart="@drawable/ic_tv_grid" />
++                <TextView android:id="@+id/columns4" style="@style/SettingsColumnChoice" android:text="4" />
++                <TextView android:id="@+id/columns5" style="@style/SettingsColumnChoice" android:text="5" />
++                <TextView android:id="@+id/columns6" style="@style/SettingsColumnChoice" android:text="6" />
++                <TextView android:id="@+id/columns7" style="@style/SettingsColumnChoice" android:text="7" />
++            </LinearLayout>
++            <LinearLayout
++                android:layout_width="match_parent"
++                android:layout_height="54dp"
++                android:gravity="center_vertical"
++                android:paddingEnd="8dp"
++                android:orientation="horizontal">
++                <TextView style="@style/SettingsChoiceLabel" android:text="@string/rows_below_dock_label" android:drawableStart="@drawable/ic_tv_apps" />
++                <TextView android:id="@+id/rows0" style="@style/SettingsColumnChoice" android:text="0" />
++                <TextView android:id="@+id/rows1" style="@style/SettingsColumnChoice" android:text="1" />
++                <TextView android:id="@+id/rows2" style="@style/SettingsColumnChoice" android:text="2" />
++                <TextView android:id="@+id/rows3" style="@style/SettingsColumnChoice" android:text="3" />
++            </LinearLayout>
++            <LinearLayout
++                android:layout_width="match_parent"
++                android:layout_height="54dp"
++                android:gravity="center_vertical"
++                android:paddingEnd="8dp"
++                android:orientation="horizontal">
++                <TextView style="@style/SettingsChoiceLabel" android:text="@string/dock_opacity_label" android:drawableStart="@drawable/ic_tv_image" />
++                <TextView android:id="@+id/dock100" style="@style/SettingsColumnChoice" android:text="100" />
++                <TextView android:id="@+id/dock70" style="@style/SettingsColumnChoice" android:text="70" />
++                <TextView android:id="@+id/dock50" style="@style/SettingsColumnChoice" android:text="50" />
++                <TextView android:id="@+id/dock30" style="@style/SettingsColumnChoice" android:text="30" />
++            </LinearLayout>
++
++            <TextView style="@style/SettingsSection" android:text="@string/section_background" />
++            <TextView android:id="@+id/wallpaperChoice" style="@style/SettingsRow" android:drawableStart="@drawable/ic_tv_image" />
++            <TextView android:id="@+id/videoChoice" style="@style/SettingsRow" android:drawableStart="@drawable/ic_tv_video" />
++            <TextView android:id="@+id/nightBrightnessChoice" style="@style/SettingsRow" android:drawableStart="@drawable/ic_tv_sun" />
++
++            <TextView style="@style/SettingsSection" android:text="@string/section_effects" />
++            <TextView android:id="@+id/animationsChoice" style="@style/SettingsRow" android:drawableStart="@drawable/ic_tv_sparkle" />
++            <TextView android:id="@+id/advancedChoice" style="@style/SettingsRow" android:drawableStart="@drawable/ic_tv_sparkle" />
++            <TextView style="@style/SettingsHint" android:text="@string/advanced_effects_warning" />
++
++            <TextView style="@style/SettingsSection" android:text="@string/section_system" />
++            <TextView android:id="@+id/openOnStartChoice" style="@style/SettingsRow" android:drawableStart="@drawable/ic_home_settings_pill" android:visibility="gone" />
++            <TextView android:id="@+id/followThemeChoice" style="@style/SettingsRow" android:drawableStart="@drawable/ic_tv_reset" android:text="@string/follow_theme" />
++            <TextView style="@style/SettingsHint" android:text="@string/follow_theme_hint" />
++            <TextView android:id="@+id/defaultHomeChoice" style="@style/SettingsRow" android:drawableStart="@drawable/ic_home_settings_pill" android:text="@string/home_settings" />
++            <TextView style="@style/SettingsHint" android:text="@string/home_settings_help" />
++            <TextView android:id="@+id/tvSettingsChoice" style="@style/SettingsRow" android:drawableStart="@drawable/ic_settings" android:text="@string/tv_settings" />
+         </LinearLayout>
+-
+-        <TextView
+-            android:id="@+id/wallpaperChoice"
+-            style="@style/SettingsRow"
+-            android:layout_marginTop="28dp" />
+-
+-        <TextView
+-            android:id="@+id/animationsChoice"
+-            style="@style/SettingsRow"
+-            android:layout_marginTop="28dp" />
+-
+-        <TextView
+-            android:id="@+id/advancedChoice"
+-            style="@style/SettingsRow"
+-            android:layout_marginTop="10dp" />
+-
+-        <TextView
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:layout_marginTop="8dp"
+-            android:text="@string/advanced_effects_warning"
+-            android:textColor="#FFACB8C1"
+-            android:textSize="14sp" />
+-
+-        <TextView
+-            android:id="@+id/openOnStartChoice"
+-            style="@style/SettingsRow"
+-            android:layout_marginTop="28dp"
+-            android:visibility="gone" />
+-
+-        <TextView
+-            android:id="@+id/followThemeChoice"
+-            style="@style/SettingsRow"
+-            android:layout_marginTop="18dp"
+-            android:text="@string/follow_theme" />
+-
+-        <TextView
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:layout_marginTop="7dp"
+-            android:text="@string/follow_theme_hint"
+-            android:textColor="#FFACB8C1"
+-            android:textSize="14sp" />
+-
+-        <TextView
+-            android:id="@+id/defaultHomeChoice"
+-            style="@style/SettingsRow"
+-            android:layout_marginTop="28dp"
+-            android:text="@string/home_settings" />
+-
+-        <TextView
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:layout_marginTop="7dp"
+-            android:text="@string/home_settings_help"
+-            android:textColor="#FFACB8C1"
+-            android:textSize="14sp" />
+-
+-        <TextView
+-            android:id="@+id/tvSettingsChoice"
+-            style="@style/SettingsRow"
+-            android:layout_marginTop="18dp"
+-            android:text="@string/tv_settings" />
+-    </LinearLayout>
+-</ScrollView>
++    </ScrollView>
++</FrameLayout>
 diff --git a/launcher/app/src/main/res/layout/activity_main.xml b/launcher/app/src/main/res/layout/activity_main.xml
 index c037d247..3023931b 100644
 --- a/launcher/app/src/main/res/layout/activity_main.xml
@@ -2823,7 +3233,7 @@ index c037d247..3023931b 100644
                          <TextView
                              android:id="@+id/lunarDate"
 diff --git a/launcher/app/src/main/res/values-es/strings.xml b/launcher/app/src/main/res/values-es/strings.xml
-index e3244921..4e7df351 100644
+index e3244921..f0b83bd4 100644
 --- a/launcher/app/src/main/res/values-es/strings.xml
 +++ b/launcher/app/src/main/res/values-es/strings.xml
 @@ -46,6 +46,8 @@
@@ -2835,7 +3245,7 @@ index e3244921..4e7df351 100644
      <string name="advanced_effects">Efectos avanzados</string>
      <string name="advanced_effects_state">Efectos avanzados: %1$s</string>
      <string name="open_on_start_label">Abrir al iniciar</string>
-@@ -144,4 +146,25 @@
+@@ -144,4 +146,29 @@
      <string name="race_countdown_hours">%1$dh %2$dm</string>
      <string name="race_countdown_days">%1$dd %2$dh</string>
      <string name="last_opened">Abierta por última vez %1$s</string>
@@ -2860,6 +3270,10 @@ index e3244921..4e7df351 100644
 +    <string name="apps_music">Música</string>
 +    <string name="apps_games">Juegos</string>
 +    <string name="apps_more">Más</string>
++    <string name="section_screen">Pantalla</string>
++    <string name="section_background">Fondo</string>
++    <string name="section_effects">Efectos</string>
++    <string name="section_system">Sistema</string>
  </resources>
 diff --git a/launcher/app/src/main/res/values/config.xml b/launcher/app/src/main/res/values/config.xml
 index c963338f..2e69a305 100644
@@ -2899,7 +3313,7 @@ index c963338f..2e69a305 100644
           label, caption and glow colour, once you answer Show on the prompt. false: never look for cards or ask. -->
      <bool name="module_cards">true</bool>
 diff --git a/launcher/app/src/main/res/values/strings.xml b/launcher/app/src/main/res/values/strings.xml
-index ca006552..e0e2bf08 100644
+index ca006552..b3c33ac2 100644
 --- a/launcher/app/src/main/res/values/strings.xml
 +++ b/launcher/app/src/main/res/values/strings.xml
 @@ -58,6 +58,8 @@
@@ -2911,7 +3325,7 @@ index ca006552..e0e2bf08 100644
      <string name="advanced_effects">Advanced effects</string>
      <string name="advanced_effects_state">Advanced effects: %1$s</string>
      <string name="open_on_start_label">Open on start</string>
-@@ -152,4 +154,26 @@
+@@ -152,4 +154,30 @@
      <!-- Cinematic top shelf (cinematic_home): the line under the focused dock app's name; %1$s is when it was
           last opened, e.g. "5 minutes ago" or "yesterday, 9:40 pm". -->
      <string name="last_opened">Last opened %1$s</string>
@@ -2937,6 +3351,100 @@ index ca006552..e0e2bf08 100644
 +    <string name="apps_music">Music</string>
 +    <string name="apps_games">Games</string>
 +    <string name="apps_more">More</string>
++    <string name="section_screen">Screen</string>
++    <string name="section_background">Background</string>
++    <string name="section_effects">Effects</string>
++    <string name="section_system">System</string>
+ </resources>
+diff --git a/launcher/app/src/main/res/values/styles.xml b/launcher/app/src/main/res/values/styles.xml
+index 25089128..4b9d18c9 100644
+--- a/launcher/app/src/main/res/values/styles.xml
++++ b/launcher/app/src/main/res/values/styles.xml
+@@ -35,22 +35,77 @@
+         <item name="android:drawablePadding">0dp</item>
+     </style>
+ 
++    <!-- Local: the launcher settings as a TV menu panel over a dimmed Home. -->
++    <style name="Theme.TvHome.Panel" parent="Theme.TvHome">
++        <item name="android:windowIsTranslucent">true</item>
++        <item name="android:windowBackground">@android:color/transparent</item>
++        <item name="android:colorBackgroundCacheHint">@null</item>
++        <item name="android:backgroundDimEnabled">true</item>
++        <item name="android:backgroundDimAmount">0.45</item>
++    </style>
++
+     <style name="SettingsRow">
+         <item name="android:layout_width">match_parent</item>
+-        <item name="android:layout_height">52dp</item>
+-        <item name="android:gravity">center_vertical</item>
+-        <item name="android:paddingStart">18dp</item>
+-        <item name="android:paddingEnd">18dp</item>
++        <item name="android:layout_height">54dp</item>
++        <item name="android:layout_marginTop">2dp</item>
++        <item name="android:gravity">center_vertical|start</item>
++        <item name="android:paddingStart">16dp</item>
++        <item name="android:paddingEnd">14dp</item>
+         <item name="android:background">@drawable/settings_choice_bg</item>
+-        <item name="android:textColor">#FFFFFFFF</item>
+-        <item name="android:textSize">18sp</item>
++        <item name="android:textColor">@color/settings_text</item>
++        <item name="android:textSize">17sp</item>
++        <item name="android:singleLine">true</item>
++        <item name="android:ellipsize">end</item>
++        <item name="android:drawablePadding">16dp</item>
++        <item name="android:drawableTint">@color/settings_text</item>
++        <item name="android:drawableEnd">@drawable/ic_tv_chevron</item>
+         <item name="android:focusable">true</item>
+         <item name="android:clickable">true</item>
+     </style>
++
+     <style name="SettingsColumnChoice" parent="SettingsRow">
++        <item name="android:layout_width">46dp</item>
++        <item name="android:layout_height">38dp</item>
++        <item name="android:layout_marginTop">0dp</item>
++        <item name="android:layout_marginStart">6dp</item>
++        <item name="android:paddingStart">0dp</item>
++        <item name="android:paddingEnd">0dp</item>
++        <item name="android:textSize">15sp</item>
++        <item name="android:gravity">center</item>
++        <item name="android:drawableEnd">@null</item>
++    </style>
++
++    <style name="SettingsSection">
++        <item name="android:layout_width">match_parent</item>
++        <item name="android:layout_height">wrap_content</item>
++        <item name="android:layout_marginTop">22dp</item>
++        <item name="android:layout_marginBottom">4dp</item>
++        <item name="android:paddingStart">16dp</item>
++        <item name="android:textColor">#80FFFFFF</item>
++        <item name="android:textSize">12sp</item>
++        <item name="android:letterSpacing">0.14</item>
++        <item name="android:textAllCaps">true</item>
++    </style>
++
++    <style name="SettingsHint">
++        <item name="android:layout_width">match_parent</item>
++        <item name="android:layout_height">wrap_content</item>
++        <item name="android:paddingStart">54dp</item>
++        <item name="android:paddingEnd">16dp</item>
++        <item name="android:paddingBottom">4dp</item>
++        <item name="android:textColor">#73FFFFFF</item>
++        <item name="android:textSize">12sp</item>
++    </style>
++
++    <style name="SettingsChoiceLabel">
+         <item name="android:layout_width">0dp</item>
++        <item name="android:layout_height">wrap_content</item>
+         <item name="android:layout_weight">1</item>
+-        <item name="android:layout_marginEnd">10dp</item>
+-        <item name="android:gravity">center</item>
++        <item name="android:paddingStart">16dp</item>
++        <item name="android:textColor">#E6FFFFFF</item>
++        <item name="android:textSize">17sp</item>
++        <item name="android:drawablePadding">16dp</item>
++        <item name="android:drawableTint">#E6FFFFFF</item>
++        <item name="android:gravity">center_vertical</item>
+     </style>
  </resources>
 diff --git a/mi-launcher/LEEME.md b/mi-launcher/LEEME.md
 new file mode 100644
