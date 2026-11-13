@@ -172,4 +172,8 @@
     <string name="sleep_in">Sleep in %1$d min</string>
     <string name="sleep_line">%1$d min</string>
     <string name="powered_by" translatable="false">powered by</string>
+    <string name="apps_watch">Watch</string>
+    <string name="apps_music">Music</string>
+    <string name="apps_games">Games</string>
+    <string name="apps_more">More</string>
 </resources>

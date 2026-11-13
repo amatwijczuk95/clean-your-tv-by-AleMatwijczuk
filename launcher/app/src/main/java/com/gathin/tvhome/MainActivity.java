@@ -1880,6 +1880,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
         @Override public void openLibrary() { onLibraryRequested(); }
+        @Override public void dockVisible(boolean visible) {
+            grid.animate().alpha(visible ? 1f : 0f).setDuration(DownDrawer.ms(260)).start();
+        }
         @Override public boolean showSearch() { return searchButton; }
         @Override public boolean sleepTimer() { return sleepTimerOn; }
         @Override public void sleepChanged() { updateSleepLine(); }

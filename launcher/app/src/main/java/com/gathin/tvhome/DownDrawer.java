@@ -1,7 +1,11 @@
 package com.gathin.tvhome;
 
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.drawable.Drawable;
@@ -14,15 +18,23 @@ import android.view.ViewOutlineProvider;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.text.Collator;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Local addition (theme key "down_drawer"): Down from the dock, when no grid row sits under it, slides the dock up
- * and shows a quiet panel at the bottom: a Search pill (the TV's own universal search) and the dock apps in the
- * order they were last opened. Up or Back puts everything back. Nothing is built until it is opened.
+ * and shows a quiet sheet at the bottom: the forecast card, a row of actions (USB, All apps, sleep timer) and, just
+ * peeking under them, "All apps". Down once more expands the sheet over the whole screen into every launchable app,
+ * in small sections (Watch, Music, Games, More) of rounded tiles; Up from the first row folds it back. Up or Back
+ * from the top puts Home back. Nothing is built until it is opened.
  */
 final class DownDrawer {
     interface Host {
@@ -37,6 +49,8 @@ final class DownDrawer {
         void slideHome(float dy, boolean open);
         /** Focus the dock tile at this position and put the glass back on it. */
         void focusDock(int position);
+        /** Fade the dock out while the full app list covers the screen, and back in. */
+        void dockVisible(boolean visible);
         /** Open the App library (every installed app). */
         void openLibrary();
         boolean showSearch();
@@ -50,20 +64,28 @@ final class DownDrawer {
         void mediaPrevious();
     }
 
+    private static final int COLUMNS = 6;
+
     private final Activity activity;
     private final ViewGroup root;
     private final Host host;
     private final float dp;
     private LinearLayout panel;
+    private ScrollView scroll;
+    private LinearLayout content;
     private LinearLayout row;
     private LinearLayout forecast;
     private LinearLayout columns;
     private TextView toggle;
+    private TextView appsTitle;
+    private LinearLayout apps;
+    /** The app tiles, row by row across every section, for Up and Down. */
+    private final List<List<View>> tileRows = new ArrayList<>();
     private boolean byDay;
+    private boolean expanded;
+    private ValueAnimator heightAnim;
     /** A key whose release still has to be swallowed after its press acted. */
     private int swallowUp;
-    /** Apps opened within this long show under Recent. */
-    private static final long RECENT_MS = 14L * 24 * 60 * 60 * 1000;
     private boolean open;
     private int returnTo;
 
@@ -76,7 +98,7 @@ final class DownDrawer {
 
     /** Durations for this panel, kept the same however fast the TV's animator scale is set (0.5x here). */
     static long ms(long base) {
-        float s = android.animation.ValueAnimator.getDurationScale();
+        float s = ValueAnimator.getDurationScale();
         return s > 0f && s < 1f ? Math.round(base / s) : base;
     }
 
@@ -87,7 +109,9 @@ final class DownDrawer {
         return open;
     }
 
-    /** Handles the keys that open and close the panel; everything else goes on as usual. */
+    // ---- keys ---------------------------------------------------------------------------------------------------
+
+    /** Handles the keys that open, move inside and close the sheet; everything else goes on as usual. */
     boolean onKey(KeyEvent e) {
         int code = e.getKeyCode();
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
@@ -103,80 +127,169 @@ final class DownDrawer {
             return true;
         }
         View f = activity.getCurrentFocus();
-        boolean inPanel = f != null && isInside(f);
-        boolean inForecast = inPanel && toggle != null && f == toggle;
+        boolean inPanel = f != null && isInside(f, panel);
+        boolean inForecast = inPanel && f == toggle;
+        boolean inRow = inPanel && isInside(f, row);
+        int[] tile = inPanel ? tileAt(f) : null;
+
         if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE) {
-            if (!down) close(true);
-            return true;
-        }
-        if (code == KeyEvent.KEYCODE_DPAD_UP && inPanel) {
-            if (down) {
-                swallowUp = code;
-                if (!inForecast && forecast.getVisibility() == View.VISIBLE) toggle.requestFocus();
+            if (!down) {
+                if (expanded) collapse(true);
                 else close(true);
             }
             return true;
         }
-        if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
-            if (down && inForecast && row.getChildCount() > 0) row.getChildAt(0).requestFocus();
+        if (!inPanel) {
+            // Focus slipped out while the sheet is up: bring it back rather than let OK open a dock app.
+            if (down) focusRowStart();
             return true;
         }
-        if (inForecast && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) return true;
-        if (inPanel && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
-            // Move along the row here: Home's own grid navigation would otherwise pull focus back to the dock.
-            if (down) {
-                int i = indexInRow(f);
-                int next = i + (code == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
+        boolean isUp = code == KeyEvent.KEYCODE_DPAD_UP, isDown = code == KeyEvent.KEYCODE_DPAD_DOWN;
+        boolean isLeft = code == KeyEvent.KEYCODE_DPAD_LEFT, isRight = code == KeyEvent.KEYCODE_DPAD_RIGHT;
+        if (!(isUp || isDown || isLeft || isRight)) return false;
+        if (!down) return true;
+        if (tile != null) {
+            int r = tile[0], c = tile[1];
+            if (isLeft && c > 0) tileRows.get(r).get(c - 1).requestFocus();
+            else if (isRight && c + 1 < tileRows.get(r).size()) tileRows.get(r).get(c + 1).requestFocus();
+            else if (isDown && r + 1 < tileRows.size()) focusTile(r + 1, c);
+            else if (isUp && r > 0) focusTile(r - 1, c);
+            else if (isUp) collapse(true);
+            return true;
+        }
+        if (inForecast) {
+            if (isUp) {
+                swallowUp = code;
+                close(true);
+            } else if (isDown) {
+                focusRowStart();
+            }
+            return true;
+        }
+        if (inRow) {
+            if (isUp) {
+                swallowUp = code;
+                if (forecast.getVisibility() == View.VISIBLE) toggle.requestFocus();
+                else close(true);
+            } else if (isDown) {
+                expand();
+            } else {
+                int i = indexIn(row, f);
+                int next = i + (isRight ? 1 : -1);
                 while (next >= 0 && next < row.getChildCount() && !row.getChildAt(next).isFocusable()) {
-                    next += code == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1;
+                    next += isRight ? 1 : -1;
                 }
                 if (next >= 0 && next < row.getChildCount()) row.getChildAt(next).requestFocus();
             }
             return true;
         }
-        if (!inPanel) {
-            // Focus slipped out while the panel is up: bring it back rather than let OK open a dock app.
-            if (down && row.getChildCount() > 0) row.getChildAt(0).requestFocus();
-            return true;
-        }
-        return false;
+        return true;
     }
 
-    private int indexInRow(View v) {
+    private void focusRowStart() {
+        if (row.getChildCount() > 0) row.getChildAt(0).requestFocus();
+    }
+
+    private void focusTile(int r, int c) {
+        List<View> line = tileRows.get(r);
+        line.get(Math.min(c, line.size() - 1)).requestFocus();
+    }
+
+    private int[] tileAt(View v) {
+        for (int r = 0; r < tileRows.size(); r++) {
+            List<View> line = tileRows.get(r);
+            for (int c = 0; c < line.size(); c++) if (line.get(c) == v) return new int[]{r, c};
+        }
+        return null;
+    }
+
+    private static int indexIn(ViewGroup parent, View v) {
         for (Object p = v; p instanceof View; p = ((View) p).getParent()) {
-            if (((View) p).getParent() == row) return row.indexOfChild((View) p);
+            if (((View) p).getParent() == parent) return parent.indexOfChild((View) p);
         }
         return -1;
     }
 
-    private boolean isInside(View v) {
+    private static boolean isInside(View v, View container) {
         for (Object p = v; p instanceof View; p = ((View) p).getParent()) {
-            if (p == panel) return true;
+            if (p == container) return true;
         }
         return false;
     }
+
+    // ---- open, close, expand ----------------------------------------------------------------------------------
 
     private void openPanel(int fromPosition) {
         returnTo = fromPosition;
         if (panel == null) build();
         fill();
         open = true;
+        expanded = false;
+        panel.setBackground(sheetBackground(false));
         panel.setVisibility(View.VISIBLE);
         panel.setAlpha(0f);
         panel.setTranslationY(48 * dp);
+        setScrollHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
         panel.post(() -> {
             if (!open) return;
-            host.slideHome(-panel.getHeight() + 24 * dp, true);
-            panel.animate().alpha(1f).translationY(0f).setInterpolator(EASE_OUT).setDuration(ms(320)).start();
-            View first = row.getChildCount() > 0 ? row.getChildAt(0) : null;
-            if (first != null) first.requestFocus();
+            // Folded: the sheet shows the forecast and the actions, with the "All apps" title peeking under them.
+            setScrollHeight(appsTitle.getBottom() + Math.round(6 * dp));
+            scroll.scrollTo(0, 0);
+            panel.post(() -> {
+                if (!open) return;
+                host.slideHome(-panel.getHeight() + 24 * dp, true);
+                panel.animate().alpha(1f).translationY(0f).setInterpolator(EASE_OUT).setDuration(ms(320)).start();
+                focusRowStart();
+            });
         });
+    }
+
+    /** Down from the actions: the sheet rises over the whole screen into every app. */
+    private void expand() {
+        if (expanded || tileRows.isEmpty()) return;
+        expanded = true;
+        host.dockVisible(false);
+        panel.setBackground(sheetBackground(true));
+        int target = root.getHeight() - Math.round(140 * dp) - panel.getPaddingTop() - panel.getPaddingBottom();
+        animateScrollHeight(scroll.getHeight(), Math.max(target, scroll.getHeight()));
+        focusTile(0, 0);
+    }
+
+    /** Up from the first row of apps (or Back): fold the sheet back to the actions. */
+    private void collapse(boolean focusRow) {
+        if (!expanded) return;
+        expanded = false;
+        host.dockVisible(true);
+        panel.setBackground(sheetBackground(false));
+        if (focusRow) focusRowStart();
+        scroll.smoothScrollTo(0, 0);
+        animateScrollHeight(scroll.getHeight(), appsTitle.getBottom() + Math.round(6 * dp));
+    }
+
+    private void animateScrollHeight(int from, int to) {
+        if (heightAnim != null) heightAnim.cancel();
+        heightAnim = ValueAnimator.ofInt(from, to);
+        heightAnim.setDuration(ms(360));
+        heightAnim.setInterpolator(EASE_OUT);
+        heightAnim.addUpdateListener(a -> setScrollHeight((Integer) a.getAnimatedValue()));
+        heightAnim.start();
+    }
+
+    private void setScrollHeight(int h) {
+        ViewGroup.LayoutParams lp = scroll.getLayoutParams();
+        lp.height = h;
+        scroll.setLayoutParams(lp);
     }
 
     /** Puts Home back; animate is false when an app is opening or Home is leaving. */
     void close(boolean animate) {
         if (!open) return;
         open = false;
+        if (heightAnim != null) heightAnim.cancel();
+        if (expanded) {
+            expanded = false;
+            host.dockVisible(true);
+        }
         panel.animate().cancel();
         if (animate) {
             panel.animate().alpha(0f).translationY(32 * dp).setInterpolator(EASE_IN).setDuration(ms(200)).withEndAction(() -> {
@@ -190,15 +303,36 @@ final class DownDrawer {
         host.focusDock(returnTo);
     }
 
+    private Drawable sheetBackground(boolean full) {
+        return new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, full
+                ? new int[]{0xCC05070C, 0xEB05070C, 0xF205070C}
+                : new int[]{0x00000000, 0xB3000000, 0xE6000000});
+    }
+
+    // ---- build ----------------------------------------------------------------------------------------------------
+
     private void build() {
         panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable shade = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0x00000000, 0xB3000000, 0xE6000000});
-        panel.setBackground(shade);
         int side = Math.round(56 * dp);
-        panel.setPadding(side, Math.round(26 * dp), side, Math.round(18 * dp));
+        panel.setPadding(side, Math.round(26 * dp), side, Math.round(10 * dp));
         panel.setVisibility(View.GONE);
+        panel.setClipChildren(false);
+
+        scroll = new ScrollView(activity);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setClipChildren(false);
+        scroll.setClipToPadding(false);
+        scroll.setSmoothScrollingEnabled(true);
+        content = new LinearLayout(activity);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setClipChildren(false);
+        content.setClipToPadding(false);
+        content.setPadding(0, Math.round(6 * dp), 0, Math.round(24 * dp));
+        scroll.addView(content, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        panel.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
 
         forecast = new LinearLayout(activity);
         forecast.setOrientation(LinearLayout.HORIZONTAL);
@@ -240,17 +374,8 @@ final class DownDrawer {
         forecast.addView(columns, clp);
         LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        flp.bottomMargin = Math.round(16 * dp);
-        panel.addView(forecast, flp);
-
-        TextView title = new TextView(activity);
-        title.setText(R.string.down_drawer_title);
-        title.setTextColor(0xA6FFFFFF);
-        title.setTextSize(13f);
-        title.setLetterSpacing(0.14f);
-        title.setAllCaps(true);
-        title.setPadding(Math.round(4 * dp), 0, 0, Math.round(12 * dp));
-        panel.addView(title);
+        flp.bottomMargin = Math.round(18 * dp);
+        content.addView(forecast, flp);
 
         row = new LinearLayout(activity);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -258,19 +383,45 @@ final class DownDrawer {
         row.setClipChildren(false);
         row.setClipToPadding(false);
         row.setPadding(Math.round(6 * dp), Math.round(6 * dp), Math.round(6 * dp), Math.round(6 * dp));
-        android.widget.HorizontalScrollView scroller = new android.widget.HorizontalScrollView(activity);
-        scroller.setHorizontalScrollBarEnabled(false);
-        scroller.setClipChildren(false);
-        scroller.setClipToPadding(false);
-        scroller.addView(row, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+        content.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
-        panel.setClipChildren(false);
-        panel.addView(scroller, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+
+        appsTitle = sectionTitle(activity.getString(R.string.down_drawer_all_apps));
+        android.graphics.drawable.Drawable chev = activity.getDrawable(R.drawable.ic_tv_chevron);
+        if (chev != null) {
+            chev = chev.mutate();
+            chev.setTint(0x99FFFFFF);
+            int px = Math.round(12 * dp);
+            chev.setBounds(0, 0, px, px);
+            appsTitle.setCompoundDrawablesRelative(null, null, chev, null);
+            appsTitle.setCompoundDrawablePadding(Math.round(6 * dp));
+        }
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        tlp.topMargin = Math.round(20 * dp);
+        content.addView(appsTitle, tlp);
+
+        apps = new LinearLayout(activity);
+        apps.setOrientation(LinearLayout.VERTICAL);
+        apps.setClipChildren(false);
+        apps.setClipToPadding(false);
+        content.addView(apps, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
         root.addView(panel, lp);
+    }
+
+    private TextView sectionTitle(String text) {
+        TextView t = new TextView(activity);
+        t.setText(text);
+        t.setTextColor(0xA6FFFFFF);
+        t.setTextSize(13f);
+        t.setLetterSpacing(0.14f);
+        t.setAllCaps(true);
+        t.setPadding(Math.round(4 * dp), 0, 0, Math.round(12 * dp));
+        return t;
     }
 
     private void fill() {
@@ -290,10 +441,7 @@ final class DownDrawer {
                 }
             }, 112));
         }
-        row.addView(iconPill(R.drawable.ic_tv_apps, activity.getString(R.string.down_drawer_all_apps), v -> {
-            close(false);
-            host.openLibrary();
-        }, 168));
+        row.addView(iconPill(R.drawable.ic_tv_apps, activity.getString(R.string.down_drawer_all_apps), v -> expand(), 168));
         if (host.sleepTimer()) {
             TextView sleep = iconPill(R.drawable.ic_tv_sleep, sleepLabel(SleepTimer.minutesLeft(activity)), null, 176);
             sleep.setOnClickListener(v -> {
@@ -304,26 +452,168 @@ final class DownDrawer {
             });
             row.addView(sleep);
         }
-        long now = System.currentTimeMillis();
-        List<Integer> order = new ArrayList<>();
-        for (int i = 0; i < host.dockCount(); i++) {
-            long t = LastOpened.get(activity, host.packageAt(i));
-            if (t > 0 && now - t < RECENT_MS) order.add(i);
-        }
-        order.sort((a, b) -> Long.compare(LastOpened.get(activity, host.packageAt(b)),
-                LastOpened.get(activity, host.packageAt(a))));
-        for (int pos : order) row.addView(card(pos));
-        if (order.isEmpty()) {
-            TextView hint = new TextView(activity);
-            hint.setText(R.string.down_drawer_empty);
-            hint.setTextColor(0x80FFFFFF);
-            hint.setTextSize(13f);
-            hint.setGravity(Gravity.CENTER_VERTICAL);
-            hint.setMinHeight(Math.round(72 * dp));
-            hint.setPadding(Math.round(8 * dp), 0, 0, 0);
-            row.addView(hint);
+        fillApps();
+    }
+
+    // ---- every app, in sections -------------------------------------------------------------------------------------
+
+    private static final Set<String> WATCH = new HashSet<>(java.util.Arrays.asList(
+            "com.netflix.ninja", "com.amazon.amazonvideo.livingroom", "com.google.android.youtube.tv", "org.smarttube.stable",
+            "com.directv.dtvlatam", "com.streamflixreborn.streamflix", "com.disney.disneyplus", "com.wbd.stream",
+            "com.google.android.exoplayer2.mundoinfinito", "com.mediatek.wwtv.mediaplayer", "com.mediatek.wwtv.tvcenter"));
+    private static final Set<String> MUSIC = new HashSet<>(java.util.Arrays.asList(
+            "com.spotify.tv.android", "com.google.android.youtube.tvmusic", "com.deezer.android.tv"));
+
+    private int sectionOf(ApplicationInfo info) {
+        if (WATCH.contains(info.packageName)) return 0;
+        if (MUSIC.contains(info.packageName)) return 1;
+        switch (info.category) {
+            case ApplicationInfo.CATEGORY_VIDEO:
+            case ApplicationInfo.CATEGORY_IMAGE:
+                return 0;
+            case ApplicationInfo.CATEGORY_AUDIO:
+                return 1;
+            case ApplicationInfo.CATEGORY_GAME:
+                return 2;
+            default:
+                return 3;
         }
     }
+
+    private void fillApps() {
+        apps.removeAllViews();
+        tileRows.clear();
+        PackageManager pm = activity.getPackageManager();
+        String self = activity.getPackageName();
+        Set<String> hidden = AppLibraryDialog.hiddenFromLibrary;
+        Map<String, ResolveInfo> unique = new LinkedHashMap<>();
+        for (String category : new String[]{Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER}) {
+            for (ResolveInfo ri : pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(category), 0)) {
+                if (ri.activityInfo == null || !ri.activityInfo.exported) continue;
+                String pkg = ri.activityInfo.packageName;
+                if (pkg.equals(self) || hidden.contains(pkg) || unique.containsKey(pkg)) continue;
+                unique.put(pkg, ri);
+            }
+        }
+        List<List<ResolveInfo>> sections = new ArrayList<>();
+        for (int i = 0; i < 4; i++) sections.add(new ArrayList<>());
+        Map<String, String> labels = new LinkedHashMap<>();
+        for (ResolveInfo ri : unique.values()) {
+            labels.put(ri.activityInfo.packageName, String.valueOf(ri.loadLabel(pm)));
+            sections.get(sectionOf(ri.activityInfo.applicationInfo)).add(ri);
+        }
+        Collator collator = Collator.getInstance();
+        int[] names = {R.string.apps_watch, R.string.apps_music, R.string.apps_games, R.string.apps_more};
+        boolean first = true;
+        for (int s = 0; s < 4; s++) {
+            List<ResolveInfo> list = sections.get(s);
+            if (list.isEmpty()) continue;
+            list.sort((a, b) -> collator.compare(labels.get(a.activityInfo.packageName), labels.get(b.activityInfo.packageName)));
+            TextView title = sectionTitle(activity.getString(names[s]));
+            title.setTextColor(0x80FFFFFF);
+            title.setTextSize(12f);
+            LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            tl.topMargin = Math.round((first ? 2 : 18) * dp);
+            apps.addView(title, tl);
+            first = false;
+            LinearLayout line = null;
+            List<View> lineTiles = null;
+            for (int i = 0; i < list.size(); i++) {
+                if (i % COLUMNS == 0) {
+                    line = new LinearLayout(activity);
+                    line.setOrientation(LinearLayout.HORIZONTAL);
+                    line.setClipChildren(false);
+                    line.setClipToPadding(false);
+                    line.setPadding(Math.round(6 * dp), Math.round(4 * dp), 0, Math.round(10 * dp));
+                    apps.addView(line);
+                    lineTiles = new ArrayList<>();
+                    tileRows.add(lineTiles);
+                }
+                ResolveInfo ri = list.get(i);
+                View tile = appTile(ri, labels.get(ri.activityInfo.packageName), pm);
+                line.addView(tile);
+                lineTiles.add(tile);
+            }
+        }
+    }
+
+    /** A rounded full-bleed tile (the app's TV banner, else its icon on glass) with its name under it. */
+    private View appTile(ResolveInfo ri, String label, PackageManager pm) {
+        LinearLayout col = new LinearLayout(activity);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setFocusable(true);
+        col.setFocusableInTouchMode(true);
+        col.setClipChildren(false);
+        int w = Math.round(124 * dp), h = Math.round(70 * dp);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMarginEnd(Math.round(14 * dp));
+        col.setLayoutParams(lp);
+
+        FrameLayout frame = new FrameLayout(activity);
+        final float radius = 14 * dp;
+        frame.setOutlineProvider(new ViewOutlineProvider() {
+            @Override public void getOutline(View v, Outline o) {
+                o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), radius);
+            }
+        });
+        frame.setClipToOutline(true);
+        frame.setElevation(4 * dp);
+        Drawable banner = ri.activityInfo.loadBanner(pm);
+        if (banner == null) banner = ri.activityInfo.applicationInfo.loadBanner(pm);
+        ImageView art = new ImageView(activity);
+        if (banner != null) {
+            art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            art.setImageDrawable(banner);
+            art.setBackgroundColor(0xFF1C1C1E);
+            frame.addView(art, new FrameLayout.LayoutParams(w, h));
+        } else {
+            GradientDrawable glass = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{0x40FFFFFF, 0x14FFFFFF});
+            frame.setBackground(glass);
+            art.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            art.setImageDrawable(ri.loadIcon(pm));
+            int s = Math.round(40 * dp);
+            frame.addView(art, new FrameLayout.LayoutParams(s, s, Gravity.CENTER));
+        }
+        col.addView(frame, new LinearLayout.LayoutParams(w, h));
+
+        TextView name = new TextView(activity);
+        name.setText(label);
+        name.setTextColor(0x99FFFFFF);
+        name.setTextSize(12f);
+        name.setSingleLine(true);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        name.setGravity(Gravity.CENTER_HORIZONTAL);
+        name.setPadding(Math.round(2 * dp), Math.round(8 * dp), Math.round(2 * dp), 0);
+        col.addView(name, new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        col.setOnFocusChangeListener((v, has) -> {
+            GradientDrawable ring = new GradientDrawable();
+            ring.setCornerRadius(radius);
+            ring.setStroke(Math.round(2f * dp), 0xE6FFFFFF);
+            frame.setForeground(has ? ring : null);
+            frame.setElevation((has ? 14 : 4) * dp);
+            name.setTextColor(has ? 0xFFFFFFFF : 0x99FFFFFF);
+            v.animate().scaleX(has ? 1.1f : 1f).scaleY(has ? 1.1f : 1f).translationY(has ? -3 * dp : 0f)
+                    .setInterpolator(EASE_OUT).setDuration(ms(180)).start();
+        });
+        String pkg = ri.activityInfo.packageName;
+        col.setOnClickListener(v -> {
+            Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
+            if (i == null) i = pm.getLaunchIntentForPackage(pkg);
+            if (i == null) return;
+            close(false);
+            try {
+                activity.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                LastOpened.record(activity, pkg);
+            } catch (Exception ignored) {
+                // gone meanwhile
+            }
+        });
+        return col;
+    }
+
+    // ---- forecast -------------------------------------------------------------------------------------------------
 
     private void fillForecast() {
         List<String[]> items = byDay ? WeatherLine.daily() : WeatherLine.hourly();
@@ -388,6 +678,8 @@ final class DownDrawer {
         return v;
     }
 
+    // ---- pills ------------------------------------------------------------------------------------------------------
+
     /** A pill with a drawn icon (and optional text) instead of an emoji glyph. */
     private TextView iconPill(int icon, String text, View.OnClickListener click, int widthDp) {
         TextView p = (TextView) pill(text, click, widthDp);
@@ -412,14 +704,6 @@ final class DownDrawer {
         return minutes <= 0 ? activity.getString(R.string.sleep_off) : activity.getString(R.string.sleep_in, minutes);
     }
 
-    private String playLabel(boolean playing) {
-        return activity.getString(playing ? R.string.media_pause : R.string.media_play);
-    }
-
-    private View pill(String text, View.OnClickListener click) {
-        return pill(text, click, 128);
-    }
-
     private View pill(String text, View.OnClickListener click, int widthDp) {
         TextView pill = new TextView(activity);
         pill.setText(text);
@@ -428,9 +712,9 @@ final class DownDrawer {
         pill.setGravity(Gravity.CENTER);
         pill.setFocusable(true);
         pill.setFocusableInTouchMode(true);
-        int w = Math.round(widthDp * dp), h = Math.round(72 * dp);
+        int w = Math.round(widthDp * dp), h = Math.round(64 * dp);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, h);
-        lp.setMarginEnd(Math.round(22 * dp));
+        lp.setMarginEnd(Math.round(18 * dp));
         pill.setLayoutParams(lp);
         pill.setBackground(pillBackground(false));
         pill.setOnFocusChangeListener((v, has) -> {
@@ -449,64 +733,7 @@ final class DownDrawer {
         return d;
     }
 
-    private View card(int pos) {
-        LinearLayout col = new LinearLayout(activity);
-        col.setOrientation(LinearLayout.VERTICAL);
-        col.setFocusable(true);
-        col.setFocusableInTouchMode(true);
-        col.setClipChildren(false);
-        int w = Math.round(128 * dp), h = Math.round(72 * dp);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMarginEnd(Math.round(14 * dp));
-        col.setLayoutParams(lp);
-
-        FrameLayout frame = new FrameLayout(activity);
-        ImageView art = new ImageView(activity);
-        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        Drawable d = host.artworkAt(pos);
-        if (d != null && d.getConstantState() != null) d = d.getConstantState().newDrawable().mutate();
-        art.setImageDrawable(d);
-        art.setBackgroundColor(0xFF1A1A1A);
-        final float radius = 10 * dp;
-        frame.setOutlineProvider(new ViewOutlineProvider() {
-            @Override public void getOutline(View v, Outline o) {
-                o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), radius);
-            }
-        });
-        frame.setClipToOutline(true);
-        frame.addView(art, new FrameLayout.LayoutParams(w, h));
-        col.addView(frame, new LinearLayout.LayoutParams(w, h));
-
-        TextView name = new TextView(activity);
-        name.setText(host.labelAt(pos));
-        name.setTextColor(0xE6FFFFFF);
-        name.setTextSize(13f);
-        name.setSingleLine(true);
-        name.setPadding(Math.round(2 * dp), Math.round(8 * dp), 0, 0);
-        col.addView(name);
-
-        TextView when = new TextView(activity);
-        long t = LastOpened.get(activity, host.packageAt(pos));
-        when.setText(t > 0 ? LastOpened.describe(activity, t) : "");
-        when.setTextColor(0x80FFFFFF);
-        when.setTextSize(11f);
-        when.setSingleLine(true);
-        when.setPadding(Math.round(2 * dp), Math.round(2 * dp), 0, 0);
-        col.addView(when);
-
-        col.setOnFocusChangeListener((v, has) -> {
-            GradientDrawable ring = new GradientDrawable();
-            ring.setCornerRadius(radius);
-            ring.setStroke(Math.round(2.5f * dp), 0xF2FFFFFF);
-            frame.setForeground(has ? ring : null);
-            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setInterpolator(EASE_OUT).setDuration(ms(180)).start();
-        });
-        col.setOnClickListener(v -> {
-            close(false);
-            host.launchAt(pos);
-        });
-        return col;
-    }
+    // ---- USB and search ---------------------------------------------------------------------------------------------
 
     /** A way to open a plugged-in USB drive, or null when none is mounted: the TV's media player, else Files. */
     private Intent usbIntent() {
@@ -528,7 +755,7 @@ final class DownDrawer {
             }
         }
         if (!mounted) return null;
-        android.content.pm.PackageManager pm = activity.getPackageManager();
+        PackageManager pm = activity.getPackageManager();
         for (String pkg : new String[]{"com.mediatek.wwtv.mediaplayer", "com.android.documentsui"}) {
             Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
             if (i == null) i = pm.getLaunchIntentForPackage(pkg);

@@ -163,4 +163,8 @@
     <string name="sleep_off">Apagar: no</string>
     <string name="sleep_in">Apagar en %1$d min</string>
     <string name="sleep_line">%1$d min</string>
+    <string name="apps_watch">Ver</string>
+    <string name="apps_music">Música</string>
+    <string name="apps_games">Juegos</string>
+    <string name="apps_more">Más</string>
 </resources>
