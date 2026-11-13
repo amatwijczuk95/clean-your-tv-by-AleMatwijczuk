@@ -171,4 +171,6 @@
     <string name="section_background">Fondo</string>
     <string name="section_effects">Efectos</string>
     <string name="section_system">Sistema</string>
+    <string name="settings_subtitle">Inicio, fondo y efectos</string>
+    <string name="settings_footer">Clean Your TV · v%1$s</string>
 </resources>

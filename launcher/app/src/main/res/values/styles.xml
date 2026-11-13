@@ -46,7 +46,10 @@
 
     <style name="SettingsRow">
         <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">54dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">56dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
         <item name="android:layout_marginTop">2dp</item>
         <item name="android:gravity">center_vertical|start</item>
         <item name="android:paddingStart">16dp</item>
@@ -54,8 +57,9 @@
         <item name="android:background">@drawable/settings_choice_bg</item>
         <item name="android:textColor">@color/settings_text</item>
         <item name="android:textSize">17sp</item>
-        <item name="android:singleLine">true</item>
+        <item name="android:maxLines">2</item>
         <item name="android:ellipsize">end</item>
+        <item name="android:lineSpacingExtra">2dp</item>
         <item name="android:drawablePadding">16dp</item>
         <item name="android:drawableTint">@color/settings_text</item>
         <item name="android:drawableEnd">@drawable/ic_tv_chevron</item>
@@ -66,6 +70,9 @@
     <style name="SettingsColumnChoice" parent="SettingsRow">
         <item name="android:layout_width">46dp</item>
         <item name="android:layout_height">38dp</item>
+        <item name="android:minHeight">38dp</item>
+        <item name="android:paddingTop">0dp</item>
+        <item name="android:paddingBottom">0dp</item>
         <item name="android:layout_marginTop">0dp</item>
         <item name="android:layout_marginStart">6dp</item>
         <item name="android:paddingStart">0dp</item>

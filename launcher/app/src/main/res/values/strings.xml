@@ -180,4 +180,6 @@
     <string name="section_background">Background</string>
     <string name="section_effects">Effects</string>
     <string name="section_system">System</string>
+    <string name="settings_subtitle">Home, background and effects</string>
+    <string name="settings_footer">Clean Your TV · v%1$s</string>
 </resources>

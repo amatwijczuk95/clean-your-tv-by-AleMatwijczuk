@@ -10,6 +10,7 @@ import android.content.pm.ResolveInfo;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.TextView;
 import android.widget.LinearLayout;
 import android.widget.Toast;
@@ -50,6 +51,8 @@ public final class LauncherSettingsActivity extends Activity {
         super.onCreate(state);
         overridePendingTransition(R.anim.panel_in, 0);   // local: the menu slides in from the right
         setContentView(R.layout.activity_launcher_settings);
+        fillHeader();
+        findViewById(R.id.settingsColumn).post(this::staggerIn);
         choices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
         Config config = Config.load(this);
         View reorderChoice = findViewById(R.id.reorderChoice);
@@ -325,6 +328,7 @@ public final class LauncherSettingsActivity extends Activity {
                         : getString(R.string.wallpaper_theme_default)));
         openOnStartChoice.setText(getString(R.string.open_on_start_state, openOnStartLabel()));
         followThemeChoice.setSelected(!hasOnTvChoices());
+            polishRows();
     }
 
     private boolean hasOnTvChoices() {
@@ -359,5 +363,73 @@ public final class LauncherSettingsActivity extends Activity {
             }
         }
         return super.dispatchKeyEvent(e);
+    }
+
+    // ---- local: TV menu polish ----------------------------------------------------------------------------------
+
+    /** Title on top and the current value in grey under it; Sí/No values become a switch on the right. */
+    private void polishRows() {
+        ViewGroup column = findViewById(R.id.settingsColumn);
+        if (column == null) return;
+        String on = getString(R.string.on), off = getString(R.string.off);
+        float d = getResources().getDisplayMetrics().density;
+        for (int i = 0; i < column.getChildCount(); i++) {
+            View v = column.getChildAt(i);
+            if (!(v instanceof TextView) || !v.isFocusable()) continue;
+            TextView row = (TextView) v;
+            if (row.getTag() == null) {
+                row.setTag(Boolean.TRUE);
+                row.setOnFocusChangeListener((view, has) -> view.animate().scaleX(has ? 1.02f : 1f).scaleY(has ? 1.02f : 1f)
+                        .setDuration(DownDrawer.ms(160)).start());
+            }
+            String text = row.getText().toString();
+            int cut = text.indexOf(": ");
+            if (cut < 0 || text.contains("\n")) continue;
+            String label = text.substring(0, cut), value = text.substring(cut + 2);
+            android.graphics.drawable.Drawable start = row.getCompoundDrawablesRelative()[0];
+            if (value.equals(on) || value.equals(off)) {
+                android.graphics.drawable.Drawable sw = getDrawable(value.equals(on) ? R.drawable.switch_on : R.drawable.switch_off);
+                if (sw != null) sw.setBounds(0, 0, Math.round(44 * d), Math.round(26 * d));
+                row.setText(label);
+                row.setCompoundDrawablesRelative(start, null, sw, null);
+                // The switch keeps its own colours: no tint on it, the icon keeps the row's.
+                row.setCompoundDrawableTintList(null);
+                if (start != null) start.setTintList(getColorStateList(R.color.settings_text));
+            } else {
+                android.text.SpannableStringBuilder b = new android.text.SpannableStringBuilder(label).append('\n');
+                int from = b.length();
+                b.append(value);
+                b.setSpan(new android.text.style.RelativeSizeSpan(0.78f), from, b.length(), 0);
+                b.setSpan(new android.text.style.ForegroundColorSpan(0xFF8E939B), from, b.length(), 0);
+                row.setText(b);
+            }
+        }
+    }
+
+    /** Rows fade and slide in one after another when the menu opens. */
+    private void staggerIn() {
+        ViewGroup column = findViewById(R.id.settingsColumn);
+        if (column == null) return;
+        float d = getResources().getDisplayMetrics().density;
+        for (int i = 0; i < column.getChildCount(); i++) {
+            View v = column.getChildAt(i);
+            v.setAlpha(0f);
+            v.setTranslationX(24 * d);
+            v.animate().alpha(1f).translationX(0f).setStartDelay(DownDrawer.ms(60 + 22L * Math.min(i, 14)))
+                    .setDuration(DownDrawer.ms(240)).setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
+        }
+    }
+
+    private void fillHeader() {
+        TextView sub = findViewById(R.id.settingsSubtitle);
+        TextView foot = findViewById(R.id.settingsFooter);
+        String version = "";
+        try {
+            version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) {
+            // unknown
+        }
+        if (sub != null) sub.setText(R.string.settings_subtitle);
+        if (foot != null) foot.setText(getString(R.string.settings_footer, version));
     }
 }
