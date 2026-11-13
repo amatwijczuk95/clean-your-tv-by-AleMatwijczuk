@@ -261,8 +261,9 @@ final class DownDrawer {
         expanded = false;
         host.dockVisible(true);
         panel.setBackground(sheetBackground(false));
+        scroll.scrollTo(0, 0);
         if (focusRow) focusRowStart();
-        scroll.smoothScrollTo(0, 0);
+        scroll.scrollTo(0, 0);
         animateScrollHeight(scroll.getHeight(), appsTitle.getBottom() + Math.round(6 * dp));
     }
 
@@ -271,7 +272,10 @@ final class DownDrawer {
         heightAnim = ValueAnimator.ofInt(from, to);
         heightAnim.setDuration(ms(360));
         heightAnim.setInterpolator(EASE_OUT);
-        heightAnim.addUpdateListener(a -> setScrollHeight((Integer) a.getAnimatedValue()));
+        heightAnim.addUpdateListener(a -> {
+            setScrollHeight((Integer) a.getAnimatedValue());
+            if (!expanded) scroll.scrollTo(0, 0);
+        });
         heightAnim.start();
     }
 
@@ -319,7 +323,14 @@ final class DownDrawer {
         panel.setVisibility(View.GONE);
         panel.setClipChildren(false);
 
-        scroll = new ScrollView(activity);
+        scroll = new ScrollView(activity) {
+            @Override
+            public void requestChildFocus(View child, View focused) {
+                super.requestChildFocus(child, focused);
+                // Folded, the sheet never scrolls: it shows the forecast and the actions from the top.
+                if (!expanded) scrollTo(0, 0);
+            }
+        };
         scroll.setVerticalScrollBarEnabled(false);
         scroll.setClipChildren(false);
         scroll.setClipToPadding(false);
