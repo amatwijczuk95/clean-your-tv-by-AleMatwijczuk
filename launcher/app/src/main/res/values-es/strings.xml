@@ -167,4 +167,8 @@
     <string name="apps_music">Música</string>
     <string name="apps_games">Juegos</string>
     <string name="apps_more">Más</string>
+    <string name="section_screen">Pantalla</string>
+    <string name="section_background">Fondo</string>
+    <string name="section_effects">Efectos</string>
+    <string name="section_system">Sistema</string>
 </resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Local addition: TV menu rows, dark text on the white focus bar. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:color="#FF111214" />
+    <item android:state_selected="true" android:color="#FFFFFFFF" />
+    <item android:color="#E6FFFFFF" />
+</selector>

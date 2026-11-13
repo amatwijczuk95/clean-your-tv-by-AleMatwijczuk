@@ -48,7 +48,7 @@ public final class LauncherSettingsActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);   // local: soft entry
+        overridePendingTransition(R.anim.panel_in, 0);   // local: the menu slides in from the right
         setContentView(R.layout.activity_launcher_settings);
         choices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
         Config config = Config.load(this);
@@ -345,6 +345,19 @@ public final class LauncherSettingsActivity extends Activity {
     @Override
     public void finish() {
         super.finish();
-        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);   // local: soft exit
+        overridePendingTransition(0, R.anim.panel_out);   // local: and back out
+    }
+
+    /** Local: Left on a full-width row closes the menu, as on a TV; the size chips keep Left for themselves. */
+    @Override
+    public boolean dispatchKeyEvent(android.view.KeyEvent e) {
+        if (e.getKeyCode() == android.view.KeyEvent.KEYCODE_DPAD_LEFT && e.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+            View f = getCurrentFocus();
+            if (f != null && f.getParent() == findViewById(R.id.settingsColumn)) {
+                finish();
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(e);
     }
 }

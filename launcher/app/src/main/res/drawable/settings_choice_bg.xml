@@ -1,23 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Local: TV menu row, a white bar when focused, a quiet glass chip when selected, nothing otherwise. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
         <shape android:shape="rectangle">
-            <solid android:color="#5574A987" />
-            <corners android:radius="14dp" />
-            <stroke android:width="2dp" android:color="#FFB9E7C7" />
+            <solid android:color="#F2FFFFFF" />
+            <corners android:radius="12dp" />
         </shape>
     </item>
     <item android:state_selected="true">
         <shape android:shape="rectangle">
-            <solid android:color="#334DAE6D" />
-            <corners android:radius="14dp" />
-            <stroke android:width="1dp" android:color="#FF4DAE6D" />
+            <solid android:color="#40FFFFFF" />
+            <corners android:radius="12dp" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#FF242B34" />
-            <corners android:radius="14dp" />
+            <solid android:color="#00000000" />
+            <corners android:radius="12dp" />
         </shape>
     </item>
 </selector>

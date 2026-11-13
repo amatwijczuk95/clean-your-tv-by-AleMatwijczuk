@@ -176,4 +176,8 @@
     <string name="apps_music">Music</string>
     <string name="apps_games">Games</string>
     <string name="apps_more">More</string>
+    <string name="section_screen">Screen</string>
+    <string name="section_background">Background</string>
+    <string name="section_effects">Effects</string>
+    <string name="section_system">System</string>
 </resources>
