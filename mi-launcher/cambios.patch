@@ -1093,10 +1093,18 @@ index 233f9820..f1dd02a5 100644
          return running != null;
      }
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java
-index e4d1ab46..b40012a8 100644
+index e4d1ab46..073d534b 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/LauncherSettingsActivity.java
-@@ -34,6 +34,8 @@ public final class LauncherSettingsActivity extends Activity {
+@@ -10,6 +10,7 @@ import android.content.pm.ResolveInfo;
+ import android.os.Bundle;
+ import android.provider.Settings;
+ import android.view.View;
++import android.view.ViewGroup;
+ import android.widget.TextView;
+ import android.widget.LinearLayout;
+ import android.widget.Toast;
+@@ -34,6 +35,8 @@ public final class LauncherSettingsActivity extends Activity {
      private final TextView[] dockChoices = new TextView[DOCK_OPACITIES.length];
      private TextView wallpaperChoice;
      private TextView animationsChoice;
@@ -1105,15 +1113,18 @@ index e4d1ab46..b40012a8 100644
      private TextView advancedChoice;
      private TextView followThemeChoice;
      private TextView openOnStartChoice;
-@@ -46,6 +48,7 @@ public final class LauncherSettingsActivity extends Activity {
+@@ -46,7 +49,10 @@ public final class LauncherSettingsActivity extends Activity {
      @Override
      protected void onCreate(Bundle state) {
          super.onCreate(state);
 +        overridePendingTransition(R.anim.panel_in, 0);   // local: the menu slides in from the right
          setContentView(R.layout.activity_launcher_settings);
++        fillHeader();
++        findViewById(R.id.settingsColumn).post(this::staggerIn);
          choices = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
          Config config = Config.load(this);
-@@ -108,6 +111,27 @@ public final class LauncherSettingsActivity extends Activity {
+         View reorderChoice = findViewById(R.id.reorderChoice);
+@@ -108,6 +114,27 @@ public final class LauncherSettingsActivity extends Activity {
          }
          wallpaperChoice = findViewById(R.id.wallpaperChoice);
          wallpaperChoice.setOnClickListener(v -> showWallpaperPicker());
@@ -1141,7 +1152,7 @@ index e4d1ab46..b40012a8 100644
          animationsChoice = findViewById(R.id.animationsChoice);
          animationsChoice.setOnClickListener(v -> {
              animations = !animations;
-@@ -286,6 +310,8 @@ public final class LauncherSettingsActivity extends Activity {
+@@ -286,6 +313,8 @@ public final class LauncherSettingsActivity extends Activity {
          for (int i = 0; i < dockChoices.length; i++) {
              dockChoices[i].setSelected(dockOpacity == DOCK_OPACITIES[i]);
          }
@@ -1150,7 +1161,15 @@ index e4d1ab46..b40012a8 100644
          animationsChoice.setText(getString(R.string.animations_state,
                  getString(animations ? R.string.on : R.string.off)));
          advancedChoice.setText(getString(R.string.advanced_effects_state,
-@@ -315,4 +341,23 @@ public final class LauncherSettingsActivity extends Activity {
+@@ -299,6 +328,7 @@ public final class LauncherSettingsActivity extends Activity {
+                         : getString(R.string.wallpaper_theme_default)));
+         openOnStartChoice.setText(getString(R.string.open_on_start_state, openOnStartLabel()));
+         followThemeChoice.setSelected(!hasOnTvChoices());
++            polishRows();
+     }
+ 
+     private boolean hasOnTvChoices() {
+@@ -315,4 +345,91 @@ public final class LauncherSettingsActivity extends Activity {
              Toast.makeText(this, R.string.not_available, Toast.LENGTH_LONG).show();
          }
      }
@@ -1172,6 +1191,74 @@ index e4d1ab46..b40012a8 100644
 +            }
 +        }
 +        return super.dispatchKeyEvent(e);
++    }
++
++    // ---- local: TV menu polish ----------------------------------------------------------------------------------
++
++    /** Title on top and the current value in grey under it; Sí/No values become a switch on the right. */
++    private void polishRows() {
++        ViewGroup column = findViewById(R.id.settingsColumn);
++        if (column == null) return;
++        String on = getString(R.string.on), off = getString(R.string.off);
++        float d = getResources().getDisplayMetrics().density;
++        for (int i = 0; i < column.getChildCount(); i++) {
++            View v = column.getChildAt(i);
++            if (!(v instanceof TextView) || !v.isFocusable()) continue;
++            TextView row = (TextView) v;
++            if (row.getTag() == null) {
++                row.setTag(Boolean.TRUE);
++                row.setOnFocusChangeListener((view, has) -> view.animate().scaleX(has ? 1.02f : 1f).scaleY(has ? 1.02f : 1f)
++                        .setDuration(DownDrawer.ms(160)).start());
++            }
++            String text = row.getText().toString();
++            int cut = text.indexOf(": ");
++            if (cut < 0 || text.contains("\n")) continue;
++            String label = text.substring(0, cut), value = text.substring(cut + 2);
++            android.graphics.drawable.Drawable start = row.getCompoundDrawablesRelative()[0];
++            if (value.equals(on) || value.equals(off)) {
++                android.graphics.drawable.Drawable sw = getDrawable(value.equals(on) ? R.drawable.switch_on : R.drawable.switch_off);
++                if (sw != null) sw.setBounds(0, 0, Math.round(44 * d), Math.round(26 * d));
++                row.setText(label);
++                row.setCompoundDrawablesRelative(start, null, sw, null);
++                // The switch keeps its own colours: no tint on it, the icon keeps the row's.
++                row.setCompoundDrawableTintList(null);
++                if (start != null) start.setTintList(getColorStateList(R.color.settings_text));
++            } else {
++                android.text.SpannableStringBuilder b = new android.text.SpannableStringBuilder(label).append('\n');
++                int from = b.length();
++                b.append(value);
++                b.setSpan(new android.text.style.RelativeSizeSpan(0.78f), from, b.length(), 0);
++                b.setSpan(new android.text.style.ForegroundColorSpan(0xFF8E939B), from, b.length(), 0);
++                row.setText(b);
++            }
++        }
++    }
++
++    /** Rows fade and slide in one after another when the menu opens. */
++    private void staggerIn() {
++        ViewGroup column = findViewById(R.id.settingsColumn);
++        if (column == null) return;
++        float d = getResources().getDisplayMetrics().density;
++        for (int i = 0; i < column.getChildCount(); i++) {
++            View v = column.getChildAt(i);
++            v.setAlpha(0f);
++            v.setTranslationX(24 * d);
++            v.animate().alpha(1f).translationX(0f).setStartDelay(DownDrawer.ms(60 + 22L * Math.min(i, 14)))
++                    .setDuration(DownDrawer.ms(240)).setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
++        }
++    }
++
++    private void fillHeader() {
++        TextView sub = findViewById(R.id.settingsSubtitle);
++        TextView foot = findViewById(R.id.settingsFooter);
++        String version = "";
++        try {
++            version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
++        } catch (Exception ignored) {
++            // unknown
++        }
++        if (sub != null) sub.setText(R.string.settings_subtitle);
++        if (foot != null) foot.setText(getString(R.string.settings_footer, version));
 +    }
  }
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
@@ -2937,11 +3024,53 @@ index 00000000..07c4e962
 +    <corners android:topLeftRadius="28dp" android:bottomLeftRadius="28dp" />
 +    <stroke android:width="1dp" android:color="#1FFFFFFF" />
 +</shape>
+diff --git a/launcher/app/src/main/res/drawable/switch_off.xml b/launcher/app/src/main/res/drawable/switch_off.xml
+new file mode 100644
+index 00000000..b8057016
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/switch_off.xml
+@@ -0,0 +1,15 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local: a TV menu toggle. -->
++<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
++    <item android:width="44dp" android:height="26dp">
++        <shape android:shape="rectangle">
++            <solid android:color="#59FFFFFF" />
++            <corners android:radius="13dp" />
++        </shape>
++    </item>
++    <item android:width="20dp" android:height="20dp" android:gravity="start|center_vertical" android:start="3dp" android:end="3dp">
++        <shape android:shape="oval">
++            <solid android:color="#FFFFFFFF" />
++        </shape>
++    </item>
++</layer-list>
+diff --git a/launcher/app/src/main/res/drawable/switch_on.xml b/launcher/app/src/main/res/drawable/switch_on.xml
+new file mode 100644
+index 00000000..b72ef855
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/switch_on.xml
+@@ -0,0 +1,15 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Local: a TV menu toggle. -->
++<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
++    <item android:width="44dp" android:height="26dp">
++        <shape android:shape="rectangle">
++            <solid android:color="#FF34C759" />
++            <corners android:radius="13dp" />
++        </shape>
++    </item>
++    <item android:width="20dp" android:height="20dp" android:gravity="end|center_vertical" android:start="3dp" android:end="3dp">
++        <shape android:shape="oval">
++            <solid android:color="#FFFFFFFF" />
++        </shape>
++    </item>
++</layer-list>
 diff --git a/launcher/app/src/main/res/layout/activity_launcher_settings.xml b/launcher/app/src/main/res/layout/activity_launcher_settings.xml
-index b3de8647..5fe2f2ae 100644
+index b3de8647..16a25a5d 100644
 --- a/launcher/app/src/main/res/layout/activity_launcher_settings.xml
 +++ b/launcher/app/src/main/res/layout/activity_launcher_settings.xml
-@@ -1,154 +1,98 @@
+@@ -1,154 +1,126 @@
  <?xml version="1.0" encoding="utf-8"?>
 -<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
 +<!-- Local: the launcher settings as a TV menu, a frosted panel on the right over the dimmed Home. -->
@@ -3049,6 +3178,7 @@ index b3de8647..5fe2f2ae 100644
 +            android:paddingBottom="34dp">
 +
 +            <TextView
++                android:id="@+id/settingsTitle"
 +                android:layout_width="match_parent"
 +                android:layout_height="wrap_content"
 +                android:paddingStart="16dp"
@@ -3058,8 +3188,25 @@ index b3de8647..5fe2f2ae 100644
 +                android:gravity="center_vertical"
 +                android:text="@string/launcher_settings"
 +                android:textColor="#FFFFFFFF"
-+                android:textSize="26sp"
-+                android:fontFamily="@string/font_medium" />
++                android:textSize="28sp"
++                android:fontFamily="@string/font_regular" />
++
++            <TextView
++                android:id="@+id/settingsSubtitle"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="4dp"
++                android:paddingStart="52dp"
++                android:textColor="#8CFFFFFF"
++                android:textSize="13sp" />
++
++            <View
++                android:layout_width="match_parent"
++                android:layout_height="1dp"
++                android:layout_marginTop="18dp"
++                android:layout_marginStart="16dp"
++                android:layout_marginEnd="16dp"
++                android:background="#1FFFFFFF" />
 +
 +            <TextView android:id="@+id/reorderChoice" style="@style/SettingsRow" android:drawableStart="@drawable/ic_swap_vert" android:text="@string/reorder" android:visibility="gone" />
 +
@@ -3118,6 +3265,16 @@ index b3de8647..5fe2f2ae 100644
 +            <TextView android:id="@+id/defaultHomeChoice" style="@style/SettingsRow" android:drawableStart="@drawable/ic_home_settings_pill" android:text="@string/home_settings" />
 +            <TextView style="@style/SettingsHint" android:text="@string/home_settings_help" />
 +            <TextView android:id="@+id/tvSettingsChoice" style="@style/SettingsRow" android:drawableStart="@drawable/ic_settings" android:text="@string/tv_settings" />
++
++            <TextView
++                android:id="@+id/settingsFooter"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="26dp"
++                android:gravity="center"
++                android:textColor="#4DFFFFFF"
++                android:textSize="12sp"
++                android:letterSpacing="0.06" />
          </LinearLayout>
 -
 -        <TextView
@@ -3233,7 +3390,7 @@ index c037d247..3023931b 100644
                          <TextView
                              android:id="@+id/lunarDate"
 diff --git a/launcher/app/src/main/res/values-es/strings.xml b/launcher/app/src/main/res/values-es/strings.xml
-index e3244921..f0b83bd4 100644
+index e3244921..16c6133e 100644
 --- a/launcher/app/src/main/res/values-es/strings.xml
 +++ b/launcher/app/src/main/res/values-es/strings.xml
 @@ -46,6 +46,8 @@
@@ -3245,7 +3402,7 @@ index e3244921..f0b83bd4 100644
      <string name="advanced_effects">Efectos avanzados</string>
      <string name="advanced_effects_state">Efectos avanzados: %1$s</string>
      <string name="open_on_start_label">Abrir al iniciar</string>
-@@ -144,4 +146,29 @@
+@@ -144,4 +146,31 @@
      <string name="race_countdown_hours">%1$dh %2$dm</string>
      <string name="race_countdown_days">%1$dd %2$dh</string>
      <string name="last_opened">Abierta por última vez %1$s</string>
@@ -3274,6 +3431,8 @@ index e3244921..f0b83bd4 100644
 +    <string name="section_background">Fondo</string>
 +    <string name="section_effects">Efectos</string>
 +    <string name="section_system">Sistema</string>
++    <string name="settings_subtitle">Inicio, fondo y efectos</string>
++    <string name="settings_footer">Clean Your TV · v%1$s</string>
  </resources>
 diff --git a/launcher/app/src/main/res/values/config.xml b/launcher/app/src/main/res/values/config.xml
 index c963338f..2e69a305 100644
@@ -3313,7 +3472,7 @@ index c963338f..2e69a305 100644
           label, caption and glow colour, once you answer Show on the prompt. false: never look for cards or ask. -->
      <bool name="module_cards">true</bool>
 diff --git a/launcher/app/src/main/res/values/strings.xml b/launcher/app/src/main/res/values/strings.xml
-index ca006552..b3c33ac2 100644
+index ca006552..492eec96 100644
 --- a/launcher/app/src/main/res/values/strings.xml
 +++ b/launcher/app/src/main/res/values/strings.xml
 @@ -58,6 +58,8 @@
@@ -3325,7 +3484,7 @@ index ca006552..b3c33ac2 100644
      <string name="advanced_effects">Advanced effects</string>
      <string name="advanced_effects_state">Advanced effects: %1$s</string>
      <string name="open_on_start_label">Open on start</string>
-@@ -152,4 +154,30 @@
+@@ -152,4 +154,32 @@
      <!-- Cinematic top shelf (cinematic_home): the line under the focused dock app's name; %1$s is when it was
           last opened, e.g. "5 minutes ago" or "yesterday, 9:40 pm". -->
      <string name="last_opened">Last opened %1$s</string>
@@ -3355,12 +3514,14 @@ index ca006552..b3c33ac2 100644
 +    <string name="section_background">Background</string>
 +    <string name="section_effects">Effects</string>
 +    <string name="section_system">System</string>
++    <string name="settings_subtitle">Home, background and effects</string>
++    <string name="settings_footer">Clean Your TV · v%1$s</string>
  </resources>
 diff --git a/launcher/app/src/main/res/values/styles.xml b/launcher/app/src/main/res/values/styles.xml
-index 25089128..4b9d18c9 100644
+index 25089128..d828e755 100644
 --- a/launcher/app/src/main/res/values/styles.xml
 +++ b/launcher/app/src/main/res/values/styles.xml
-@@ -35,22 +35,77 @@
+@@ -35,22 +35,84 @@
          <item name="android:drawablePadding">0dp</item>
      </style>
  
@@ -3379,7 +3540,10 @@ index 25089128..4b9d18c9 100644
 -        <item name="android:gravity">center_vertical</item>
 -        <item name="android:paddingStart">18dp</item>
 -        <item name="android:paddingEnd">18dp</item>
-+        <item name="android:layout_height">54dp</item>
++        <item name="android:layout_height">wrap_content</item>
++        <item name="android:minHeight">56dp</item>
++        <item name="android:paddingTop">8dp</item>
++        <item name="android:paddingBottom">8dp</item>
 +        <item name="android:layout_marginTop">2dp</item>
 +        <item name="android:gravity">center_vertical|start</item>
 +        <item name="android:paddingStart">16dp</item>
@@ -3389,8 +3553,9 @@ index 25089128..4b9d18c9 100644
 -        <item name="android:textSize">18sp</item>
 +        <item name="android:textColor">@color/settings_text</item>
 +        <item name="android:textSize">17sp</item>
-+        <item name="android:singleLine">true</item>
++        <item name="android:maxLines">2</item>
 +        <item name="android:ellipsize">end</item>
++        <item name="android:lineSpacingExtra">2dp</item>
 +        <item name="android:drawablePadding">16dp</item>
 +        <item name="android:drawableTint">@color/settings_text</item>
 +        <item name="android:drawableEnd">@drawable/ic_tv_chevron</item>
@@ -3401,6 +3566,9 @@ index 25089128..4b9d18c9 100644
      <style name="SettingsColumnChoice" parent="SettingsRow">
 +        <item name="android:layout_width">46dp</item>
 +        <item name="android:layout_height">38dp</item>
++        <item name="android:minHeight">38dp</item>
++        <item name="android:paddingTop">0dp</item>
++        <item name="android:paddingBottom">0dp</item>
 +        <item name="android:layout_marginTop">0dp</item>
 +        <item name="android:layout_marginStart">6dp</item>
 +        <item name="android:paddingStart">0dp</item>
