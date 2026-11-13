@@ -288,10 +288,10 @@ index 5d4b78fb..ac7bebf8 100644
      /**
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java b/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java
 new file mode 100644
-index 00000000..412f214c
+index 00000000..1f4a8dbb
 --- /dev/null
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/DownDrawer.java
-@@ -0,0 +1,782 @@
+@@ -0,0 +1,793 @@
 +package com.gathin.tvhome;
 +
 +import android.animation.ValueAnimator;
@@ -555,8 +555,9 @@ index 00000000..412f214c
 +        expanded = false;
 +        host.dockVisible(true);
 +        panel.setBackground(sheetBackground(false));
++        scroll.scrollTo(0, 0);
 +        if (focusRow) focusRowStart();
-+        scroll.smoothScrollTo(0, 0);
++        scroll.scrollTo(0, 0);
 +        animateScrollHeight(scroll.getHeight(), appsTitle.getBottom() + Math.round(6 * dp));
 +    }
 +
@@ -565,7 +566,10 @@ index 00000000..412f214c
 +        heightAnim = ValueAnimator.ofInt(from, to);
 +        heightAnim.setDuration(ms(360));
 +        heightAnim.setInterpolator(EASE_OUT);
-+        heightAnim.addUpdateListener(a -> setScrollHeight((Integer) a.getAnimatedValue()));
++        heightAnim.addUpdateListener(a -> {
++            setScrollHeight((Integer) a.getAnimatedValue());
++            if (!expanded) scroll.scrollTo(0, 0);
++        });
 +        heightAnim.start();
 +    }
 +
@@ -613,7 +617,14 @@ index 00000000..412f214c
 +        panel.setVisibility(View.GONE);
 +        panel.setClipChildren(false);
 +
-+        scroll = new ScrollView(activity);
++        scroll = new ScrollView(activity) {
++            @Override
++            public void requestChildFocus(View child, View focused) {
++                super.requestChildFocus(child, focused);
++                // Folded, the sheet never scrolls: it shows the forecast and the actions from the top.
++                if (!expanded) scrollTo(0, 0);
++            }
++        };
 +        scroll.setVerticalScrollBarEnabled(false);
 +        scroll.setClipChildren(false);
 +        scroll.setClipToPadding(false);
